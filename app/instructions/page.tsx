@@ -3,14 +3,17 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ModeChecklist } from "@/components/mode-checklist";
+import { CONDITION_LABEL, isCondition, workPath, type Condition } from "@/lib/study-config";
 
 export default function InstructionsPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<string | null>(null);
+  const [mode, setMode] = useState<Condition | null>(null);
 
   useEffect(() => {
+    // Task already submitted (e.g. browser Back) — continue to the questionnaire.
+    if (sessionStorage.getItem("humaid_session_data")) { router.replace("/submit"); return; }
     const m = sessionStorage.getItem("humaid_mode");
-    if (!m) { router.push("/task"); return; }
+    if (!isCondition(m)) { router.push("/"); return; }
     setMode(m);
     // Record when the instructions page was shown, to measure dwell time.
     sessionStorage.setItem("humaid_instructions_start", String(Date.now()));
@@ -20,7 +23,7 @@ export default function InstructionsPage() {
     sessionStorage.setItem("humaid_mode_start_time", new Date().toISOString());
     const start = Number(sessionStorage.getItem("humaid_instructions_start") || 0);
     if (start) sessionStorage.setItem("humaid_time_on_instructions_ms", String(Date.now() - start));
-    router.push(mode === "collaborative" ? "/collaborative" : "/competitive");
+    if (mode) router.push(workPath(mode));
   }
 
   if (!mode) return null;
@@ -31,7 +34,7 @@ export default function InstructionsPage() {
       {/* Centered header */}
       <div style={{ textAlign: "center" }} className="mb-8">
         <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-2">
-          {mode === "collaborative" ? "Collaborative Mode" : "Competitive Mode"}
+          {CONDITION_LABEL[mode]}
         </p>
         <h1 className="text-2xl font-semibold text-gray-900 mb-1">Before You Begin</h1>
         <p className="text-sm text-gray-500">Read the instructions carefully before starting.</p>
@@ -73,21 +76,40 @@ export default function InstructionsPage() {
           <div className="border border-gray-200 rounded-lg p-5 bg-white">
             <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-3">Your Role</p>
             <ul className="space-y-2.5 text-sm text-gray-600">
-              <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>At the start, you can provide the Orchestrator with your task description and any specific requirements or constraints.</li>
+              <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>At the start, you can give the Orchestrator any specific requirements (for example, tone or focus) and, optionally, instructions for individual agents.</li>
               <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>After the pipeline completes, you will see the Orchestrator's full activity log showing every decision and handoff between agents.</li>
               <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>If you are not satisfied with the result, you can give the Orchestrator written feedback and it will re-run the full pipeline incorporating your guidance.</li>
               <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>Edit the final report produced by the last agent as you see fit before submitting it as your answer.</li>
-              <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>There are no right or wrong answers — your judgment about quality and relevance is what matters.</li>
+              <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>AI agents can make mistakes. Check the report carefully — you are responsible for the accuracy of the report you submit.</li>
+            </ul>
+          </div>
+        </div>
+      ) : mode === "single" ? (
+        <div className="space-y-4 mb-8">
+          <ModeChecklist mode="single" />
+          <div className="border border-gray-200 rounded-lg p-5 bg-white">
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-3">How It Works</p>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              In Single-Agent Mode, one AI agent writes the report for you. You can give it requirements before it starts, read its draft, edit the draft directly, or send feedback to have it write a revised version.
+            </p>
+          </div>
+          <div className="border border-gray-200 rounded-lg p-5 bg-white">
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-3">Your Role</p>
+            <ul className="space-y-2.5 text-sm text-gray-600">
+              <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>At the start, you can give the agent any specific requirements (for example, tone or focus).</li>
+              <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>Read the draft carefully. If you are not satisfied, send written feedback and the agent will revise it.</li>
+              <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>Edit the report as you see fit before submitting it as your answer.</li>
+              <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>AI agents can make mistakes. Check the report carefully — you are responsible for the accuracy of the report you submit.</li>
             </ul>
           </div>
         </div>
       ) : (
         <div className="space-y-4 mb-8">
-          <ModeChecklist mode="competitive" />
+          <ModeChecklist mode={mode} />
           <div className="border border-gray-200 rounded-lg p-5 bg-white">
             <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-3">How It Works</p>
             <p className="text-sm text-gray-600 leading-relaxed mb-4">
-              In Competitive Mode, all three agents tackle the same task independently and simultaneously, each bringing a different writing style and perspective. An Orchestrator manages the full process: assigning the task, collecting outputs, running a critique round in which the agents evaluate each other's work, and then selecting the strongest version.
+              In Competitive Mode, all three agents tackle the same task independently and simultaneously, each bringing a different writing style and perspective. An Orchestrator manages the full process: assigning the task, collecting outputs, and running a critique round in which the agents evaluate each other's work{mode === "competitive" ? ", and then selecting the strongest version" : ""}.
             </p>
             <div className="space-y-4">
               {[
@@ -108,16 +130,21 @@ export default function InstructionsPage() {
           <div className="border border-gray-200 rounded-lg p-5 bg-white">
             <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-3">The Process</p>
             <div className="space-y-2.5 text-sm text-gray-600 mb-4">
-              <p className="text-xs text-gray-600 leading-relaxed">Once the agents have submitted their reports, they each write a critique of the other two. The Orchestrator then reviews all outputs and critiques and selects the version it considers strongest, providing a written rationale for its decision.</p>
+              {mode === "competitive" ? (
+                <p className="text-xs text-gray-600 leading-relaxed">Once the agents have submitted their reports, they each write a critique of the other two. The Orchestrator then reviews all outputs and critiques and recommends the version it considers strongest, providing a written rationale for its decision.</p>
+              ) : (
+                <p className="text-xs text-gray-600 leading-relaxed">Once the agents have submitted their reports, they each write a critique of the other two. You then decide which report to use.</p>
+              )}
               <p className="text-xs text-gray-600 leading-relaxed mt-2">You will see the full Orchestrator log, all three agent outputs, and each agent's critique, so you can make a fully informed judgment.</p>
             </div>
             <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-3">Your Role</p>
             <ul className="space-y-2.5 text-sm text-gray-600">
-              <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>At the start, you can describe your task and any preferences — such as desired tone, focus areas, or target audience.</li>
+              <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>At the start, you can give any preferences — such as desired tone or focus areas — and, optionally, a style for each agent.</li>
               <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>Read all three agent outputs and critiques carefully before deciding.</li>
-              <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>Use the "Use this" button next to the agent whose output you prefer. You are not required to follow the Orchestrator's selection.</li>
+              <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>{mode === "competitive" ? <>Use the &quot;Use this&quot; button next to the agent whose output you prefer. You are not required to follow the Orchestrator&apos;s recommendation.</> : <>Use the &quot;Use this&quot; button next to the agent whose output you prefer.</>}</li>
               <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>Edit the selected report in the text editor before submitting it as your final answer.</li>
               <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>If none of the outputs satisfy you, you can ask the Orchestrator to run another round with your feedback.</li>
+              <li className="flex gap-2"><span className="text-gray-400 flex-shrink-0">•</span>AI agents can make mistakes. Check the report carefully — you are responsible for the accuracy of the report you submit.</li>
             </ul>
           </div>
         </div>
