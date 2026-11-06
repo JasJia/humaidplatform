@@ -144,6 +144,28 @@ export async function callDeepSeek(
 }
 
 // ── Groq ──────────────────────────────────────────────────────────────────────
+// Groq retires models regularly (llama-3.3-70b-versatile was shut down for
+// developer-tier keys in Aug 2026, which broke every run). The model is now
+// configurable via GROQ_MODEL, with automatic fallback when a model is gone.
+const GROQ_FALLBACKS = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "llama-3.1-8b-instant"];
+let resolvedGroqModel: string | null = null;
+
+function groqCandidates(): string[] {
+  const preferred = (process.env.GROQ_MODEL ?? "").trim();
+  const list = [resolvedGroqModel, preferred || null, ...GROQ_FALLBACKS].filter(Boolean) as string[];
+  return [...new Set(list)];
+}
+
+/** The Groq model currently in use (for the modelRouting record). */
+export function groqModelInUse(): string {
+  return resolvedGroqModel ?? groqCandidates()[0];
+}
+
+/** Remove any reasoning traces some open models emit inline. */
+function stripReasoning(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+}
+
 export async function callGroq(
   messages: Msg[],
   temperature = 0.8,
@@ -152,31 +174,45 @@ export async function callGroq(
   const key = sanitizeKey(process.env.GROQ_API_KEY ?? "");
   if (!key) throw new Error("Groq API key is not configured in environment variables.");
 
-  const payload = JSON.stringify({
-    model: "llama-3.3-70b-versatile",
-    messages: messages.map((m) => ({ ...m, content: cleanText(m.content) })),
-    temperature,
-  });
+  let lastErr: Error | null = null;
+  for (const model of groqCandidates()) {
+    const payload = JSON.stringify({
+      model,
+      messages: messages.map((m) => ({ ...m, content: cleanText(m.content) })),
+      temperature,
+      ...(model.startsWith("qwen/") ? { reasoning_format: "hidden" } : {}),
+      ...(model.startsWith("openai/gpt-oss") ? { reasoning_effort: "low" } : {}),
+    });
 
-  const res = await withTimeout(
-    () =>
-      fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json; charset=utf-8",
-          Authorization: `Bearer ${key}`,
-        },
-        body: Buffer.from(payload, "utf8"),
-      }),
-    timeoutMs,
-    "Groq"
-  );
+    const res = await withTimeout(
+      () =>
+        fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            Authorization: `Bearer ${key}`,
+          },
+          body: Buffer.from(payload, "utf8"),
+        }),
+      timeoutMs,
+      "Groq"
+    );
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw httpError("Groq", res.status, body);
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      // Model retired / not available to this key → try the next candidate.
+      if ((res.status === 404 || res.status === 400) && /model_not_found|model_decommissioned|does not exist|decommissioned/i.test(body)) {
+        console.warn(`[groq] model ${model} unavailable, trying next fallback`);
+        if (resolvedGroqModel === model) resolvedGroqModel = null;
+        lastErr = httpError("Groq", res.status, body);
+        continue;
+      }
+      throw httpError("Groq", res.status, body);
+    }
+
+    resolvedGroqModel = model;
+    const data = (await res.json()) as { choices: { message: { content: string } }[] };
+    return stripReasoning(data.choices[0]?.message?.content ?? "");
   }
-
-  const data = (await res.json()) as { choices: { message: { content: string } }[] };
-  return data.choices[0]?.message?.content ?? "";
+  throw lastErr ?? new Error("Groq: no available model.");
 }
