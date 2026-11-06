@@ -1,29 +1,50 @@
 type Step = { label: string; time: string };
 
-const CHECKLISTS: Record<"collaborative" | "competitive", { total: string; steps: Step[] }> = {
-  collaborative: {
-    total: "about 10-15 minutes",
+import type { Condition } from "@/lib/study-config";
+
+const CHECKLISTS: Record<Condition, { total: string; steps: Step[] }> = {
+  single: {
+    total: "about 15-20 minutes",
     steps: [
-      { label: "Describe your task and set any preferences or per-agent instructions", time: "~1 min" },
+      { label: "Add any preferences and start the agent", time: "~1 min" },
+      { label: "Read the draft report carefully", time: "~3-4 min" },
+      { label: "Edit the report, or send feedback for a revised draft", time: "~4-5 min" },
+      { label: "Submit your answer and complete the questionnaire", time: "~6-8 min" },
+    ],
+  },
+  collaborative: {
+    total: "about 15-20 minutes",
+    steps: [
+      { label: "Add any preferences or per-agent instructions and start the pipeline", time: "~1 min" },
       { label: "Start the pipeline and follow the orchestrator's plan and each agent's handoff", time: "~3-4 min" },
       { label: "Read the final report produced by the last agent", time: "~2-3 min" },
       { label: "Edit the report, or send feedback to run the pipeline again", time: "~3-4 min" },
-      { label: "Submit your answer and complete the short survey", time: "~1-2 min" },
+      { label: "Submit your answer and complete the questionnaire", time: "~6-8 min" },
     ],
   },
   competitive: {
-    total: "about 10-15 minutes",
+    total: "about 15-20 minutes",
     steps: [
-      { label: "Describe your task and set any preferences or per-agent styles", time: "~1 min" },
+      { label: "Add any preferences or per-agent styles and run the agents", time: "~1 min" },
       { label: "Run the agents and read all three reports and their critiques", time: "~4-5 min" },
       { label: "Review the orchestrator's decision and choose the best output", time: "~2 min" },
       { label: "Edit the chosen report, or request another round with feedback", time: "~3-4 min" },
-      { label: "Submit your answer and complete the short survey", time: "~1-2 min" },
+      { label: "Submit your answer and complete the questionnaire", time: "~6-8 min" },
+    ],
+  },
+  competitive_norec: {
+    total: "about 15-20 minutes",
+    steps: [
+      { label: "Add any preferences or per-agent styles and run the agents", time: "~1 min" },
+      { label: "Read all three reports and their critiques", time: "~4-5 min" },
+      { label: "Choose the report you want to use", time: "~2 min" },
+      { label: "Edit the chosen report, or request another round with feedback", time: "~3-4 min" },
+      { label: "Submit your answer and complete the questionnaire", time: "~6-8 min" },
     ],
   },
 };
 
-export function ModeChecklist({ mode }: { mode: "collaborative" | "competitive" }) {
+export function ModeChecklist({ mode }: { mode: Condition }) {
   const { total, steps } = CHECKLISTS[mode];
 
   return (
