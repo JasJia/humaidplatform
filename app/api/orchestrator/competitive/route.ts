@@ -1,17 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { checkEnv } from "@/lib/env";
-import { callDeepSeek, callGroq, createMetrics, trackCall, summariseMetrics, Msg } from "@/lib/api-helpers";
+import { callDeepSeek, callGroq, groqModelInUse, createMetrics, trackCall, summariseMetrics, Msg } from "@/lib/api-helpers";
+import { injectSeededError } from "@/lib/study-config";
 checkEnv();
 
 export const maxDuration = 60;
 
 // Which provider/model serves each agent in this mode (logged as modelRouting).
-const MODEL_ROUTING = {
-  a: { provider: "openai", model: "gpt-5.5" },
-  b: { provider: "groq", model: "llama-3.3-70b-versatile" },
-  c: { provider: "deepseek", model: "deepseek-chat" },
-};
+function modelRouting() {
+  return {
+    a: { provider: "openai", model: "gpt-5.5" },
+    b: { provider: "groq", model: groqModelInUse() },
+    c: { provider: "deepseek", model: "deepseek-chat" },
+  };
+}
 
 // OpenAI client with 25s per-call timeout
 const openaiClient = new OpenAI({
@@ -39,14 +42,14 @@ function log(actor: LogEntry["actor"], type: LogEntry["type"], content: string):
 }
 
 export async function POST(req: NextRequest) {
-  let body: { topic?: string; userMessage?: string; previousFinal?: string; round?: number };
+  let body: { topic?: string; userMessage?: string; previousFinal?: string; round?: number; seedError?: boolean; recommend?: boolean };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_BODY" }, { status: 400 });
   }
 
-  const { topic, userMessage, previousFinal, round = 1 } = body;
+  const { topic, userMessage, previousFinal, round = 1, seedError = false, recommend = true } = body;
 
   if (!topic || !topic.trim()) {
     return NextResponse.json({ error: "Topic is required", code: "MISSING_TOPIC" }, { status: 400 });
@@ -68,7 +71,7 @@ export async function POST(req: NextRequest) {
     logs.push(log("orchestrator", "assignment", `Briefing all agents: ${brief.slice(0, 120)}${brief.length > 120 ? "…" : ""}`));
 
     // ── STEP 1: All three agents generate in parallel (with retry) ────────────
-    const reportInstruction = `Write a professional industry report, 200 words max, with in-text citations in Author (Year) format. Do NOT use memo or letter format (no To:/From:/Date: headers). Write in plain prose paragraphs. End with a "References" section listing each cited source in APA format on a separate line. Return ONLY the report text followed by the References section.`;
+    const reportInstruction = `Write a professional industry report of about 300 words, with in-text citations in Author (Year) format. Do NOT use memo or letter format (no To:/From:/Date: headers). Write in plain prose paragraphs. End with a "References" section listing each cited source in APA format on a separate line. Return ONLY the report text followed by the References section.`;
     const promptA = `You are Agent A. Brief: ${brief}\n${reportInstruction}`;
     const promptB = `You are Agent B. Brief: ${brief}\n${reportInstruction}`;
     const promptC = `You are Agent C. Brief: ${brief}\n${reportInstruction}`;
@@ -131,7 +134,11 @@ Format: One short paragraph on the first report, then one short paragraph on the
     logs.push(log("agent_b", "critique", truncate(critiqueB)));
     logs.push(log("agent_c", "critique", truncate(critiqueC)));
 
-    // ── STEP 3: Orchestrator decides final version ─────────────────────────────
+    // ── STEP 3: Orchestrator selects the strongest report ─────────────────────
+    // The orchestrator picks ONE agent's report (verbatim) rather than rewriting,
+    // so "accepting the recommendation" is well defined for analysis. In the
+    // no-recommendation condition the pick is still computed and logged, but
+    // the client does not show it.
     const decisionRes = await trackCall(metrics, () =>
       openaiClient.chat.completions.create({
         model: "gpt-5.5",
@@ -141,7 +148,7 @@ Format: One short paragraph on the first report, then one short paragraph on the
           {
             role: "system",
             content:
-              'You are the Main Orchestrator. Review all three agent outputs and critiques, then select the best version. Return JSON: { "decision": string, "rationale": string, "finalVersion": string }',
+              'You are the Main Orchestrator. Review all three agent outputs and critiques, then select the single strongest report. Return JSON: { "selectedAgent": "A" | "B" | "C", "decision": string (one sentence naming the selected agent), "rationale": string (2-3 sentences) }',
           },
           {
             role: "user",
@@ -157,25 +164,37 @@ Format: One short paragraph on the first report, then one short paragraph on the
     } catch {
       decision = {};
     }
-    // Validate finalVersion — fall back to first non-empty agent output
-    if (!decision.finalVersion || !decision.finalVersion.trim()) {
-      decision.finalVersion = [outputA, outputB, outputC].find(o => o && o.trim()) ?? outputA;
+    const letter = String(decision.selectedAgent ?? "").trim().toUpperCase().replace(/^AGENT\s*/, "");
+    const recommendedId = letter === "B" ? 2 : letter === "C" ? 3 : 1;
+
+    const outputs = [outputA, outputB, outputC];
+    // Seeded-error manipulation: the error is placed in the report the
+    // orchestrator selected (after critiques, so it is held constant).
+    if (seedError) outputs[recommendedId - 1] = injectSeededError(outputs[recommendedId - 1]);
+    const finalVersion = outputs[recommendedId - 1];
+
+    if (recommend) {
+      logs.push(log("orchestrator", "decision", decision.decision ?? `Agent ${"ABC"[recommendedId - 1]}'s report is the strongest.`));
+      logs.push(log("orchestrator", "final", decision.rationale ?? "Final version selected and ready for review."));
+    } else {
+      logs.push(log("orchestrator", "final", "All reports and critiques are ready. Please choose the report you want to use."));
     }
-    logs.push(log("orchestrator", "decision", decision.decision ?? "Decision made based on agent outputs and critiques."));
-    logs.push(log("orchestrator", "final", decision.rationale ?? "Final version selected and ready for review."));
 
     return NextResponse.json({
       success: true,
       logs,
       agentOutputs: [
-        { id: 1, name: "Agent A", style: "Agent A's Response", output: outputA, critique: critiqueA },
-        { id: 2, name: "Agent B", style: "Agent B's Response", output: outputB, critique: critiqueB },
-        { id: 3, name: "Agent C", style: "Agent C's Response", output: outputC, critique: critiqueC },
+        { id: 1, name: "Agent A", style: "Agent A's Response", output: outputs[0], critique: critiqueA },
+        { id: 2, name: "Agent B", style: "Agent B's Response", output: outputs[1], critique: critiqueB },
+        { id: 3, name: "Agent C", style: "Agent C's Response", output: outputs[2], critique: critiqueC },
       ],
-      finalVersion: decision.finalVersion,
+      finalVersion,
+      recommendedAgentId: recommendedId,
+      recommendationShown: recommend,
+      seededErrorInjected: seedError,
       coordinatorDecision: decision.decision ?? "",
       coordinatorRationale: decision.rationale ?? "",
-      modelRouting: MODEL_ROUTING,
+      modelRouting: modelRouting(),
       ...summariseMetrics(metrics),
       round,
     });
