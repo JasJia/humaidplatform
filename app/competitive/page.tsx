@@ -6,6 +6,7 @@ import { TASK } from "@/lib/data";
 import { logEvent, getEvents } from "@/lib/event-logger";
 import { computeProvenance, summariseProvenance } from "@/lib/provenance";
 import { editDistance, wordDelta } from "@/lib/edit-distance";
+import { containsSeededError } from "@/lib/study-config";
 
 type LogEntry = {
   id: string;
@@ -33,6 +34,7 @@ type Round = {
   finalVersion: string;
   coordinatorDecision: string;
   coordinatorRationale: string;
+  recommendedAgentId?: number;
   modelRouting?: ModelRouting;
   apiLatencyMs?: { perCall: number[]; total: number };
   apiErrorCount?: number;
@@ -215,16 +217,27 @@ export default function CompetitivePage() {
   const [editMode, setEditMode] = useState(false);
   const [actualTask, setActualTask] = useState(TASK.topic);
   const [taskWasCustomized, setTaskWasCustomized] = useState(false);
+  // Study condition: with or without the orchestrator's recommendation shown.
+  const [showRec, setShowRec] = useState(true);
+  const [seedError, setSeedError] = useState(false);
+  // Text of the report the participant started editing from (recommended or chosen).
+  const [baseText, setBaseText] = useState("");
 
   useEffect(() => {
-    logEvent("session_start", { mode: "competitive" });
+    // Task already submitted (e.g. browser Back) — continue to the questionnaire.
+    if (sessionStorage.getItem("humaid_session_data")) { router.replace("/submit"); return; }
+    const m = sessionStorage.getItem("humaid_mode");
+    if (m !== "competitive" && m !== "competitive_norec") { router.replace("/"); return; }
+    setShowRec(m === "competitive");
+    setSeedError(sessionStorage.getItem("humaid_seed_error") === "1");
+    logEvent("session_start", { mode: m });
     const handler = (e: BeforeUnloadEvent) => {
       if (submittingRef.current) return;
       e.preventDefault(); e.returnValue = "";
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, []);
+  }, [router]);
 
   async function runCompetition(message: string, roundNum: number, topicOverride?: string) {
     setPhase("running");
@@ -238,8 +251,10 @@ export default function CompetitivePage() {
         body: JSON.stringify({
           topic: topicOverride ?? TASK.topic,
           userMessage: message,
-          previousFinal: currentRound?.finalVersion ?? null,
+          previousFinal: (finalText || currentRound?.finalVersion) ?? null,
           round: roundNum,
+          seedError,
+          recommend: showRec,
         }),
       });
       if (!res.ok) {
@@ -258,13 +273,17 @@ export default function CompetitivePage() {
         finalVersion: data.finalVersion ?? "",
         coordinatorDecision: data.coordinatorDecision ?? "",
         coordinatorRationale: data.coordinatorRationale ?? "",
+        recommendedAgentId: data.recommendedAgentId,
         modelRouting: data.modelRouting,
         apiLatencyMs: data.apiLatencyMs,
         apiErrorCount: data.apiErrorCount,
       };
       setRounds((prev) => [...prev, round]);
       setCurrentRound(round);
-      setFinalText(data.finalVersion ?? "");
+      // Without a recommendation, the editor starts empty until a report is chosen.
+      const start = showRec ? (data.finalVersion ?? "") : "";
+      setFinalText(start);
+      setBaseText(start);
       if (roundNum === 1) setOriginalFinal(data.finalVersion ?? "");
       setSelectedAgentId(null);
       setEditMode(false);
@@ -281,7 +300,7 @@ export default function CompetitivePage() {
   }
 
   function handleStart() {
-    const taskInput = userTask.trim() || TASK.topic;
+    const taskInput = TASK.topic;
     setActualTask(taskInput);
     setTaskWasCustomized(
       Boolean(
@@ -350,7 +369,13 @@ export default function CompetitivePage() {
   function handleSelectAgent(agent: AgentOutput) {
     setSelectedAgentId(agent.id);
     setFinalText(agent.output);
-    logEvent("agent_selected", { agentId: agent.id, agentName: agent.name, agentStyle: agent.style });
+    setBaseText(agent.output);
+    logEvent("agent_selected", {
+      agentId: agent.id,
+      agentName: agent.name,
+      isRecommended: agent.id === currentRound?.recommendedAgentId,
+      replacedEdits: finalText !== baseText,
+    });
   }
 
   async function handleSubmit() {
@@ -391,10 +416,21 @@ export default function CompetitivePage() {
 
     const sessionData = {
       sessionId: sessionStorage.getItem("humaid_session_id"),
-      mode: "competitive",
+      mode: showRec ? "competitive" : "competitive_norec",
       task: TASK.topic,
       // Data-quality schema fields
-      conditionAssignmentMethod: "manual_choice",
+      conditionAssignmentMethod: sessionStorage.getItem("humaid_assignment_method") ?? "unknown",
+      condition: showRec ? "competitive" : "competitive_norec",
+      recommendationShown: showRec,
+      seededErrorCondition: seedError,
+      seededErrorRetained: seedError ? containsSeededError(finalText) : null,
+      recommendedAgentId: currentRound?.recommendedAgentId ?? null,
+      recommendedAgentName: currentRound?.recommendedAgentId ? `Agent ${"ABC"[currentRound.recommendedAgentId - 1]}` : null,
+      // Whether the final answer is based on the orchestrator's pick (shown or hidden).
+      basedOnOrchestratorPick: currentRound?.recommendedAgentId
+        ? (selectedAgentId ?? (showRec ? currentRound.recommendedAgentId : null)) === currentRound.recommendedAgentId
+        : null,
+      editDistanceFromBase: editDistance(baseText, finalText),
       actualTask,
       taskWasCustomized,
       agentDisplayOrder,
@@ -407,8 +443,10 @@ export default function CompetitivePage() {
       editDistance: editDistance(originalFinal, finalText),
       wordDelta: wordDelta(originalFinal, finalText),
       rerunCount: Math.max(0, rounds.length - 1),
-      // Kept the orchestrator's recommended version (didn't pick a different agent).
-      acceptedCoordinatorRecommendation: selectedAgentId === null,
+      // Kept the orchestrator's recommended report (or re-selected it). N/A when no recommendation shown.
+      acceptedCoordinatorRecommendation: showRec
+        ? selectedAgentId === null || selectedAgentId === currentRound?.recommendedAgentId
+        : null,
       apiLatencyMs,
       apiErrorCount,
       // Existing fields
@@ -439,16 +477,13 @@ export default function CompetitivePage() {
     <div className="max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
-        <a href="/task" className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-gray-700 transition-colors">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" /></svg>
-          Back
-        </a>
+        <span />
         <span className="font-mono text-xs text-gray-400 tabular-nums">{timer}</span>
       </div>
 
       <div className="mb-8" style={{ textAlign: "center" }}>
         <h1 className="text-xl font-semibold text-gray-900 mb-1">Competitive Mode</h1>
-        <p className="text-sm text-gray-500">The Orchestrator runs Agent A, B, and C in parallel, has them criticize each other, then decides the best output. You see the full conversation.</p>
+        <p className="text-sm text-gray-500">The Orchestrator runs Agent A, B, and C in parallel and has them critique each other{showRec ? ", then recommends the best output" : ". You decide which output to use"}. You see the full conversation.</p>
       </div>
 
       {/* Brief phase */}
@@ -456,36 +491,12 @@ export default function CompetitivePage() {
         <div className="border border-gray-200 rounded-lg p-6 bg-white space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-900 mb-1">Your Task</label>
-            <p className="text-xs text-gray-400 mb-2">Describe the research or reporting task you want the agents to work on.</p>
-            <textarea
-              value={userTask}
-              onChange={(e) => setUserTask(e.target.value)}
-              placeholder="e.g., Write an industry report on the impact of Generative AI on the manufacturing sector"
-              rows={3}
-              className="w-full border border-gray-200 rounded-lg p-3 text-sm text-gray-700 resize-none focus:outline-none focus:border-gray-400 transition-colors"
-            />
-            <div className="mt-2 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setUserTask("Write an industry report on the impact of Generative AI on the manufacturing sector")}
-                className="text-xs font-medium border border-gray-300 text-gray-500 hover:bg-gray-900 hover:border-gray-900 hover:text-white px-3 py-1.5 rounded-md transition-colors"
-              >
-                Use default task
-              </button>
-              <button
-                type="button"
-                onClick={() => setUserTask("")}
-                disabled={!userTask}
-                className="text-xs font-medium border border-red-200 text-red-400 hover:bg-red-500 hover:border-red-500 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed px-3 py-1.5 rounded-md transition-colors"
-              >
-                Clear
-              </button>
-            </div>
+            <p className="text-sm text-gray-700 bg-gray-50 border border-gray-100 rounded-lg p-3">{TASK.topic}.</p>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-900 mb-1">Preferences &amp; Requirements</label>
-            <p className="text-xs text-gray-400 mb-2">Specify any constraints, tone, audience, or focus areas for the Orchestrator.</p>
+            <p className="text-xs text-gray-400 mb-2">Optional: specify any constraints, tone, or focus areas for the Orchestrator.</p>
             <textarea
               value={preferences}
               onChange={(e) => setPreferences(e.target.value)}
@@ -594,7 +605,7 @@ export default function CompetitivePage() {
           </svg>
           <div style={{ textAlign: "center" }}>
             <p className="text-sm font-medium text-gray-700">Orchestrator is running the competition…</p>
-            <p className="text-xs text-gray-400 mt-1">Agents are generating outputs, criticizing each other, and the Orchestrator is deciding the winner.</p>
+            <p className="text-xs text-gray-400 mt-1">Agents are generating outputs and critiquing each other{showRec ? ", and the Orchestrator is selecting the strongest report" : ""}. This takes about a minute.</p>
           </div>
         </div>
       )}
@@ -655,6 +666,9 @@ export default function CompetitivePage() {
                       "bg-violet-100 text-violet-800"
                     }`}>{agent.name}</span>
                     <span className="text-xs text-gray-500">{agent.style}</span>
+                    {showRec && agent.id === currentRound.recommendedAgentId && (
+                      <span className="text-xs font-medium text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded">Orchestrator&apos;s pick</span>
+                    )}
                     <span className="text-xs text-gray-400 ml-auto mr-4">{expandedAgents.has(agent.id) ? "Hide" : "View output & critique"}</span>
                   </button>
                   <button
@@ -687,7 +701,7 @@ export default function CompetitivePage() {
           </div>
 
           {/* Coordinator's decision */}
-          {currentRound.coordinatorDecision && (
+          {showRec && currentRound.coordinatorDecision && (
             <div className="border border-gray-200 rounded-lg p-4 mb-4 bg-gray-50">
               <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-1.5">Orchestrator Decision</p>
               <p className="text-sm text-gray-700">{currentRound.coordinatorDecision}</p>
@@ -702,7 +716,9 @@ export default function CompetitivePage() {
                 <p className="text-xs text-gray-400 mt-0.5">
                   {selectedAgentId !== null
                     ? `Using ${currentRound?.agentOutputs.find(a => a.id === selectedAgentId)?.name ?? "agent"}'s response.`
-                    : "Selected by the Orchestrator. Pick a different agent above if you prefer."}
+                    : showRec
+                    ? "Recommended by the Orchestrator. Pick a different agent above if you prefer."
+                    : "Choose a report above (\"Use this\") to start editing."}
                 </p>
               </div>
               <button
@@ -713,7 +729,11 @@ export default function CompetitivePage() {
               </button>
             </div>
             <div className="p-5">
-              {editMode ? (
+              {!showRec && selectedAgentId === null ? (
+                <div className="border border-dashed border-gray-200 rounded-lg p-8 text-center text-sm text-gray-400">
+                  No report selected yet. Read the three reports and critiques above, then click &quot;Use this&quot; on the one you want to work with.
+                </div>
+              ) : editMode ? (
                 <textarea
                   value={finalText}
                   onChange={(e) => handleTextareaChange(e.target.value)}
@@ -727,13 +747,13 @@ export default function CompetitivePage() {
                   dangerouslySetInnerHTML={{ __html: renderMarkdown(finalText) }}
                 />
               )}
-              <p className="text-xs text-gray-400 mt-1.5">
-                {finalText !== originalFinal ? "Modified from original — " : ""}
+              <p className="text-xs text-gray-400 mt-1.5" style={{ display: !showRec && selectedAgentId === null ? "none" : undefined }}>
+                {finalText !== baseText ? "Modified — " : ""}
                 {wordCount(finalText)} words · {editMode ? "editing" : "click to edit"}
               </p>
             </div>
             <div className="px-5 pb-5 flex justify-center">
-              <button onClick={handleSubmit} className="bg-gray-900 hover:bg-gray-700 text-white text-sm font-medium px-6 py-2.5 rounded-md transition-colors">
+              <button onClick={handleSubmit} disabled={!finalText.trim()} className="bg-gray-900 hover:bg-gray-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-white text-sm font-medium px-6 py-2.5 rounded-md transition-colors">
                 Submit final answer
               </button>
             </div>
