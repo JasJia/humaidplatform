@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
-import { gateParticipant, markCompleted } from "@/lib/participant-gate";
+import { hasCompleted, markCompleted } from "@/lib/participant-gate";
 import { SCHEMA_VERSION, APP_VERSION, PROMPT_VERSION } from "@/lib/versions";
+import { containsSeededError, SEEDED_ERROR } from "@/lib/study-config";
 
+/**
+ * Persists a completed session and returns the Prolific completion code.
+ *
+ * Participants are recruited via Prolific: the Prolific ID is entered (or
+ * pre-filled from the URL) on the final page. Repeat completions are never
+ * blocked here (the data are always saved) but are flagged `duplicate: true`
+ * for exclusion at analysis time. Prolific itself prevents a participant from
+ * taking the same study twice.
+ */
 export async function POST(req: NextRequest) {
   let body: Record<string, unknown>;
   try {
@@ -15,29 +25,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing sessionId", code: "MISSING_SESSION_ID" }, { status: 400 });
   }
 
-  // Re-validate the participant server-side at submission time. Skipped when no
-  // participantId is present so manual/local testing still works.
   const participantId = typeof body.participantId === "string" ? body.participantId.trim() : "";
-  if (participantId) {
-    const decision = await gateParticipant(participantId);
-    if (!decision.allowed) {
-      return NextResponse.json(
-        { error: decision.message, code: decision.reason.toUpperCase() },
-        { status: 403 }
-      );
-    }
-  }
+  const isTest = body.isTest === true;
+  const duplicate = participantId ? await hasCompleted(participantId) : false;
+
+  // Authoritative outcome measure, recomputed server-side from the final text.
+  const finalText = typeof body.finalSubmission === "string" ? body.finalSubmission : "";
+  const seeded = body.seededErrorCondition === true;
 
   // Version stamps are applied server-side (authoritative) so they can't be
   // spoofed by the client and always reflect the deployed build.
   const entry = {
     ...body,
+    participantId,
+    duplicate,
+    isTest,
+    seededErrorId: seeded ? SEEDED_ERROR.id : null,
+    seededErrorRetained: seeded ? containsSeededError(finalText) : null,
     schemaVersion: SCHEMA_VERSION,
     appVersion: APP_VERSION,
     promptVersion: PROMPT_VERSION,
     loggedAt: new Date().toISOString(),
   };
-  console.log("[humaid/log]", body.sessionId);
+  console.log("[humaid/log]", body.sessionId, isTest ? "(test)" : "");
 
   try {
     await kv.lpush("sessions", JSON.stringify(entry));
@@ -47,7 +57,13 @@ export async function POST(req: NextRequest) {
   }
 
   // Record completion for repeat-participation detection (non-fatal if it fails).
-  if (participantId) await markCompleted(participantId);
+  if (participantId && !isTest) await markCompleted(participantId);
 
-  return NextResponse.json({ success: true, sessionId: body.sessionId });
+  // Env var wins; otherwise use the code passed in the study link (&cc=...).
+  const urlCode = typeof body.completionCodeFromUrl === "string" ? body.completionCodeFromUrl.trim() : "";
+  const completionCode =
+    (process.env.PROLIFIC_COMPLETION_CODE ?? "").trim() ||
+    (/^[A-Za-z0-9_-]{1,40}$/.test(urlCode) ? urlCode : "") ||
+    null;
+  return NextResponse.json({ success: true, sessionId: body.sessionId, completionCode, duplicate });
 }
