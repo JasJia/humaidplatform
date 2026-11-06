@@ -6,6 +6,7 @@ import { TASK } from "@/lib/data";
 import { logEvent, getEvents } from "@/lib/event-logger";
 import { computeProvenance, summariseProvenance } from "@/lib/provenance";
 import { editDistance, wordDelta } from "@/lib/edit-distance";
+import { containsSeededError } from "@/lib/study-config";
 
 type LogEntry = {
   id: string;
@@ -182,11 +183,16 @@ export default function CollaborativePage() {
   const [editMode, setEditMode] = useState(false);
   const [actualTask, setActualTask] = useState(TASK.topic);
   const [taskWasCustomized, setTaskWasCustomized] = useState(false);
+  const [seedError, setSeedError] = useState(false);
 
   const logPanelRef = useScrollDepth("orchestrator_log");
   const reportPanelRef = useScrollDepth("final_report");
 
   useEffect(() => {
+    // Task already submitted (e.g. browser Back) — continue to the questionnaire.
+    if (sessionStorage.getItem("humaid_session_data")) { router.replace("/submit"); return; }
+    if (sessionStorage.getItem("humaid_mode") !== "collaborative") { router.replace("/"); return; }
+    setSeedError(sessionStorage.getItem("humaid_seed_error") === "1");
     logEvent("session_start", { mode: "collaborative" });
     const handler = (e: BeforeUnloadEvent) => {
       if (submittingRef.current) return;
@@ -194,7 +200,7 @@ export default function CollaborativePage() {
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, []);
+  }, [router]);
 
   async function runPipeline(message: string, roundNum: number, topicOverride?: string) {
     setPhase("running");
@@ -208,8 +214,9 @@ export default function CollaborativePage() {
         body: JSON.stringify({
           topic: topicOverride ?? TASK.topic,
           userMessage: message,
-          previousSummary: currentRound?.summary ?? null,
+          previousSummary: (finalText || currentRound?.summary) ?? null,
           round: roundNum,
+          seedError,
         }),
       });
       if (!res.ok) {
@@ -257,7 +264,7 @@ export default function CollaborativePage() {
   }
 
   function handleStart() {
-    const taskInput = userTask.trim() || TASK.topic;
+    const taskInput = TASK.topic;
     setActualTask(taskInput);
     setTaskWasCustomized(
       Boolean(
@@ -324,7 +331,11 @@ export default function CollaborativePage() {
       mode: "collaborative",
       task: TASK.topic,
       // Data-quality schema fields
-      conditionAssignmentMethod: "manual_choice",
+      conditionAssignmentMethod: sessionStorage.getItem("humaid_assignment_method") ?? "unknown",
+      condition: "collaborative",
+      seededErrorCondition: seedError,
+      seededErrorRetained: seedError ? containsSeededError(finalText) : null,
+      editDistanceFromBase: editDistance(currentRound?.summary ?? "", finalText),
       actualTask,
       taskWasCustomized,
       agentDisplayOrder,
@@ -374,10 +385,7 @@ export default function CollaborativePage() {
     <div className="max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
-        <a href="/task" className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-gray-700 transition-colors">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" /></svg>
-          Back
-        </a>
+        <span />
         <span className="font-mono text-xs text-gray-400 tabular-nums">{timer}</span>
       </div>
 
@@ -399,32 +407,7 @@ export default function CollaborativePage() {
         <div className="border border-gray-200 rounded-lg p-6 bg-white space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-900 mb-1">Your Task</label>
-            <p className="text-xs text-gray-400 mb-2">Describe the research or reporting task you want the agents to work on.</p>
-            <textarea
-              value={userTask}
-              onChange={(e) => setUserTask(e.target.value)}
-              placeholder="e.g., Write an industry report on the impact of Generative AI on the manufacturing sector"
-              rows={3}
-              className="w-full border border-gray-200 rounded-lg p-3 text-sm text-gray-700 resize-none focus:outline-none focus:border-gray-400 transition-colors"
-            />
-            <div className="mt-2 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setUserTask("Write an industry report on the impact of Generative AI on the manufacturing sector")}
-                className="text-xs font-medium border border-gray-300 text-gray-500 hover:bg-gray-900 hover:border-gray-900 hover:text-white px-3 py-1.5 rounded-md transition-colors"
-              >
-                Use default task
-              </button>
-              {userTask && (
-                <button
-                  type="button"
-                  onClick={() => setUserTask("")}
-                  className="text-xs font-medium border border-red-200 text-red-400 hover:bg-red-500 hover:border-red-500 hover:text-white px-3 py-1.5 rounded-md transition-colors"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
+            <p className="text-sm text-gray-700 bg-gray-50 border border-gray-100 rounded-lg p-3">{TASK.topic}.</p>
           </div>
 
           <div>
@@ -565,7 +548,7 @@ export default function CollaborativePage() {
           </svg>
           <div style={{ textAlign: "center" }}>
             <p className="text-sm font-medium text-gray-700">Orchestrator is coordinating the pipeline…</p>
-            <p className="text-xs text-gray-400 mt-1">Each agent is being briefed and reviewed. This may take up to 30 seconds.</p>
+            <p className="text-xs text-gray-400 mt-1">Each agent is being briefed and reviewed. This takes about a minute.</p>
           </div>
         </div>
       )}

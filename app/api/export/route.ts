@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { cookies } from "next/headers";
 import * as XLSX from "xlsx";
+import { SURVEY } from "@/lib/survey";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 function esc(v: unknown): string {
@@ -52,6 +53,31 @@ const SESSION_HEADERS = [
   "Accepted Coordinator Rec", "API Latency Total (ms)", "API Error Count",
 ];
 
+// ── Study-design + questionnaire columns (schema 2.0) ──────────────────────
+const SURVEY_ITEM_IDS: string[] = SURVEY.flatMap((p) =>
+  p.blocks.flatMap((b) => b.items.flatMap((it) => (it.kind === "sum" ? it.parts.map((x) => x.id) : [it.id])))
+);
+const STUDY_HEADERS = [
+  "condition", "seededErrorCondition", "seededErrorRetained", "recommendationShown",
+  "recommendedAgentName", "basedOnOrchestratorPick", "editDistanceFromBase",
+  "studyId", "prolificSessionId", "isTest", "duplicate", "attentionCheckPassed",
+  "surveyStartedAt", "surveyCompletedAt",
+  ...SURVEY_ITEM_IDS.map((id) => `q_${id}`),
+];
+
+function studyCells(s: Record<string, unknown>): (string | number)[] {
+  const ans = (s.survey ?? {}) as Record<string, unknown>;
+  const v = (x: unknown): string | number =>
+    x === true ? "Yes" : x === false ? "No" : x == null ? "" : typeof x === "number" ? x : String(x);
+  return [
+    v(s.condition ?? s.mode), v(s.seededErrorCondition), v(s.seededErrorRetained), v(s.recommendationShown),
+    v(s.recommendedAgentName), v(s.basedOnOrchestratorPick), v(s.editDistanceFromBase),
+    v(s.studyId), v(s.prolificSessionId), v(s.isTest), v(s.duplicate), v(s.attentionCheckPassed),
+    v(s.surveyStartedAt), v(s.surveyCompletedAt),
+    ...SURVEY_ITEM_IDS.map((id) => v(ans[id])),
+  ];
+}
+
 /** Render a value that may be an object/array into a compact string for a cell. */
 function jsonCell(v: unknown): string {
   if (v == null) return "";
@@ -95,6 +121,7 @@ function buildSessionRow(s: Record<string, unknown>): (string | number)[] {
     Number(s.editDistance ?? ""), Number(s.wordDelta ?? ""), Number(s.rerunCount ?? ""),
     yesNo(s.acceptedCoordinatorRecommendation),
     Number(latency.total ?? ""), Number(s.apiErrorCount ?? ""),
+    ...studyCells(s),
   ];
 }
 
@@ -208,9 +235,9 @@ export async function GET(req: Request) {
 
       // Sheet 1 — Sessions
       const sessionRows = sessions.map(buildSessionRow);
-      const ws1 = XLSX.utils.aoa_to_sheet([SESSION_HEADERS, ...sessionRows]);
+      const ws1 = XLSX.utils.aoa_to_sheet([[...SESSION_HEADERS, ...STUDY_HEADERS], ...sessionRows]);
       // Column widths sized to each header (keeps in sync as columns are added).
-      ws1["!cols"] = SESSION_HEADERS.map((h) => ({ wch: Math.max(12, Math.min(40, h.length + 4)) }));
+      ws1["!cols"] = [...SESSION_HEADERS, ...STUDY_HEADERS].map((h) => ({ wch: Math.max(12, Math.min(40, h.length + 4)) }));
       XLSX.utils.book_append_sheet(wb, ws1, "Sessions");
 
       // Sheet 2 — Conversation Log
@@ -238,7 +265,7 @@ export async function GET(req: Request) {
     const lines: string[] = [];
 
     lines.push("SESSIONS");
-    lines.push(SESSION_HEADERS.map(esc).join(","));
+    lines.push([...SESSION_HEADERS, ...STUDY_HEADERS].map(esc).join(","));
     for (const s of sessions) lines.push(buildSessionRow(s).map(esc).join(","));
 
     lines.push("", "");

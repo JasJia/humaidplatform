@@ -22,6 +22,7 @@ Version 2 turns the platform into a self-contained randomized experiment for Pro
 - **Fixed task.** Every condition uses the same task and ~300-word report length. Participants can add preferences but cannot change the task.
 - **Questionnaire.** After submitting the report, participants answer a multi-page questionnaire (`lib/survey.ts`). It covers manipulation check, perceived consensus, verification, error noticing, trust, orchestrator reliance, psychological ownership, accountability, responsibility allocation, NASA-TLX, overload, demographics, an attention check, and a self-reported honesty check. They then enter or confirm their Prolific ID and receive the completion code.
 - **Prolific study link.** `https://<host>/?PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}&cc=<COMPLETION_CODE>`. The `cc` parameter supplies the completion code when the env var is not set.
+- **Database.** Sessions are stored in Upstash Redis (Vercel Storage, `KV_*` env vars). Free Upstash databases are archived after inactivity; if saving fails, check the store status under Vercel → Storage.
 - **Test runs.** Use `/?test=1&reset=1` (optionally `&mode=single|collaborative|competitive|competitive_norec&error=0|1`). Test sessions are flagged `isTest`, do not count toward balancing, and are hidden from dashboard statistics by default.
 
 Study environment variables:

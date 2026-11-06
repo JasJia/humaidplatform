@@ -10,10 +10,11 @@
  * the target shape that the mode pages, /submit, and /api/log will populate.
  */
 
-export type Mode = "collaborative" | "competitive";
+export type Mode = "single" | "collaborative" | "competitive" | "competitive_norec";
 
 /** How the participant ended up in their study condition (mode). */
 export type ConditionAssignmentMethod =
+  | "balanced_random_server_side"
   | "random_server_side"
   | "manual_choice"
   | "url_param";

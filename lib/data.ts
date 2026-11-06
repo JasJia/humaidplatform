@@ -1,9 +1,11 @@
 export const TASK = {
-  title: "Industrial Report: Generative AI",
-  topic: "Generative AI in Industry",
+  title: "Industry Report: Generative AI in Manufacturing",
+  // Fixed task text sent to the agents. Held constant across conditions so that
+  // outputs are comparable (participants can add preferences, not change the task).
+  topic: "Write an industry report on the impact of Generative AI on the manufacturing sector, focusing on cost implications for senior managers",
   description:
-    "Your task is to write an industrial report on Generative AI usage in different industries. A team of AI agents will assist you throughout the process — you will guide, review, and refine their output before submitting your final answer.",
-  estimatedTime: "10–15 minutes",
+    "Your task is to produce a short industry report for senior managers on how Generative AI affects costs in the manufacturing sector. AI agents will draft the report for you. Your job is to guide them, check their work carefully, and edit the report until you would be comfortable putting your name on it. The most accurate, highest-quality reports will receive a bonus.",
+  estimatedTime: "about 20 minutes",
 };
 
 export const COLLABORATIVE = {

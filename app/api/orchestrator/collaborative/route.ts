@@ -1,17 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { checkEnv } from "@/lib/env";
-import { callDeepSeek, callGroq, createMetrics, trackCall, summariseMetrics, Msg } from "@/lib/api-helpers";
+import { callDeepSeek, callGroq, groqModelInUse, createMetrics, trackCall, summariseMetrics, Msg } from "@/lib/api-helpers";
+import { injectSeededError } from "@/lib/study-config";
 checkEnv();
 
 export const maxDuration = 300;
 
 // Which provider/model serves each agent in this mode (logged as modelRouting).
-const MODEL_ROUTING = {
-  a: { provider: "openai", model: "gpt-5.5" },
-  b: { provider: "deepseek", model: "deepseek-chat" },
-  c: { provider: "groq", model: "llama-3.3-70b-versatile" },
-};
+function modelRouting() {
+  return {
+    a: { provider: "openai", model: "gpt-5.5" },
+    b: { provider: "deepseek", model: "deepseek-chat" },
+    c: { provider: "groq", model: groqModelInUse() },
+  };
+}
 
 // Orchestrator uses GPT-5.5 (needs reliable JSON mode)
 // maxRetries: 0 — auto-retry doubles latency on a sequential pipeline, which we can't afford.
@@ -66,13 +69,13 @@ function snippet(text: string, n = 140): string {
 }
 
 export async function POST(req: NextRequest) {
-  let body: { topic?: string; userMessage?: string; previousSummary?: string; round?: number };
+  let body: { topic?: string; userMessage?: string; previousSummary?: string; round?: number; seedError?: boolean };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_BODY" }, { status: 400 });
   }
-  const { topic, userMessage, previousSummary, round = 1 } = body;
+  const { topic, userMessage, previousSummary, round = 1, seedError = false } = body;
 
   if (!topic || !topic.trim()) {
     return NextResponse.json({ error: "Topic is required", code: "MISSING_TOPIC" }, { status: 400 });
@@ -161,7 +164,7 @@ CRITICAL CITATION RULES:
 - NEVER cite "Agent A", "Agent B", or "Agent C" as a source. They are your teammates, not references.
 - Cite only the real organizations, companies, reports, or authors mentioned in the teammates' contributions (e.g. McKinsey, Deloitte, Siemens, Gartner, World Economic Forum, etc.).
 - End with a "References" section listing each cited real source in APA format, one per line. Never list an Agent as a reference.`;
-        user = `Your assigned task: ${tasks[id]}\n\n${priorWork}${requirements ? `\n\nOverall user requirements: ${requirements}` : ""}\n\nWrite the final report (~400 words) with in-text citations to the REAL sources mentioned above, followed by the References section. Return ONLY the report and references.`;
+        user = `Your assigned task: ${tasks[id]}\n\n${priorWork}${requirements ? `\n\nOverall user requirements: ${requirements}` : ""}\n\nWrite the final report (about 300 words) with in-text citations to the REAL sources mentioned above, followed by the References section. Return ONLY the report and references.`;
       } else {
         system = `You are ${LABEL[id]}, a contributing agent in a 3-agent collaborative pipeline producing an industrial report on "${topic}". Complete your assigned task — focused and concise (under 250 words). Where relevant, reference real, named industry sources (e.g. McKinsey, Deloitte, Gartner, World Economic Forum) with approximate years so the final report can cite them. Your output will be passed to the next agent. Return only your work, no preamble.`;
         user = `Your assigned task: ${tasks[id]}${priorWork ? `\n\nWork so far from your teammates:\n${priorWork}` : ""}${requirements ? `\n\nOverall user requirements: ${requirements}` : ""}`;
@@ -181,6 +184,9 @@ CRITICAL CITATION RULES:
       }
     }
 
+    // Seeded-error manipulation: inserted into the final report the participant
+    // reviews (after generation, so the error is held constant across runs).
+    if (seedError) outputs[writer] = injectSeededError(outputs[writer]);
     const summary = outputs[writer];
 
     // ── Orchestrator completion message (built from this run's real data) ────
@@ -199,7 +205,8 @@ CRITICAL CITATION RULES:
       tasks: { agentA: tasks.a, agentB: tasks.b, agentC: tasks.c },
       contributions: { agentA: outputs.a, agentB: outputs.b, agentC: outputs.c },
       orchestratorMessage: finalMessage,
-      modelRouting: MODEL_ROUTING,
+      modelRouting: modelRouting(),
+      seededErrorInjected: seedError,
       ...summariseMetrics(metrics),
       round,
     });
