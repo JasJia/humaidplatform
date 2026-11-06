@@ -46,6 +46,13 @@ type Session = {
   sessionId: string;
   participantId?: string;
   mode: string;
+  // ── Study design (schema 2.0) ──
+  condition?: string;
+  seededErrorCondition?: boolean;
+  seededErrorRetained?: boolean | null;
+  isTest?: boolean;
+  duplicate?: boolean;
+  attentionCheckPassed?: boolean;
   startTime: string;
   endTime: string;
   wasEdited: boolean;
@@ -395,7 +402,8 @@ function avgNum(arr: number[]): number {
 
 // ── Admin Page ───────────────────────────────────────────────────────────────
 export default function AdminPage() {
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [rawSessions, setSessions] = useState<Session[]>([]);
+  const [includeTests, setIncludeTests] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeLog, setActiveLog] = useState<Session | null>(null);
   const [dark, setDark] = useState(false);
@@ -445,8 +453,26 @@ export default function AdminPage() {
       .catch((err) => { console.error("[admin]", err); setLoading(false); });
   }, []);
 
+  // Study cells (schema 2.0). Test sessions are excluded from all statistics
+  // unless "Include test sessions" is ticked.
+  const allSessions = rawSessions;
+  const sessions = includeTests ? allSessions : allSessions.filter((s) => !s.isTest);
+  const testCount = allSessions.filter((s) => s.isTest).length;
+  const CONDS = [
+    { key: "single", label: "Single agent" },
+    { key: "collaborative", label: "Collaborative" },
+    { key: "competitive", label: "Competitive + rec." },
+    { key: "competitive_norec", label: "Competitive, no rec." },
+  ];
+  const cellRows = CONDS.map((c) => {
+    const inCond = sessions.filter((s) => (s.condition ?? s.mode) === c.key);
+    const withErr = inCond.filter((s) => s.seededErrorCondition);
+    const caught = withErr.filter((s) => s.seededErrorRetained === false).length;
+    return { ...c, n: inCond.length, nErr: withErr.length, nNoErr: inCond.length - withErr.length, caught };
+  });
+
   const collaborative = sessions.filter((s) => s.mode === "collaborative");
-  const competitive   = sessions.filter((s) => s.mode === "competitive");
+  const competitive   = sessions.filter((s) => s.mode === "competitive" || s.mode === "competitive_norec");
   const edited        = sessions.filter((s) => s.wasEdited);
 
   const modeData = [
@@ -503,13 +529,46 @@ export default function AdminPage() {
           <div className="animate-pulse space-y-3">
             {[1, 2, 3].map((i) => <div key={i} className="h-12 bg-gray-100 rounded-lg" />)}
           </div>
-        ) : sessions.length === 0 ? (
+        ) : allSessions.length === 0 ? (
           <div className="border border-gray-200 rounded-lg p-10 text-center">
             <p className="text-sm text-gray-400">No sessions recorded yet.</p>
             <p className="text-xs text-gray-300 mt-1">Sessions appear here after participants complete the study.</p>
           </div>
         ) : (
           <>
+            {/* Study design cells */}
+            <div className="border border-gray-200 rounded-lg overflow-hidden mb-6">
+              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-widest">Study Cells (condition × seeded error)</p>
+                <label className="text-xs text-gray-500 flex items-center gap-1.5 cursor-pointer">
+                  <input type="checkbox" checked={includeTests} onChange={(e) => setIncludeTests(e.target.checked)} />
+                  Include test sessions ({testCount})
+                </label>
+              </div>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-gray-100 text-gray-400">
+                    <th className="text-left px-4 py-2 font-medium">Condition</th>
+                    <th className="text-right px-4 py-2 font-medium">Total n</th>
+                    <th className="text-right px-4 py-2 font-medium">No error</th>
+                    <th className="text-right px-4 py-2 font-medium">Seeded error</th>
+                    <th className="text-right px-4 py-2 font-medium">Error corrected</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cellRows.map((r) => (
+                    <tr key={r.key} className="border-b border-gray-50">
+                      <td className="px-4 py-2 text-gray-700">{r.label}</td>
+                      <td className="px-4 py-2 text-right text-gray-700">{r.n}</td>
+                      <td className="px-4 py-2 text-right text-gray-700">{r.nNoErr}</td>
+                      <td className="px-4 py-2 text-right text-gray-700">{r.nErr}</td>
+                      <td className="px-4 py-2 text-right text-gray-700">{r.nErr ? `${r.caught} (${Math.round((r.caught / r.nErr) * 100)}%)` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
             {/* Summary cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
               {[
@@ -554,7 +613,7 @@ export default function AdminPage() {
                       <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">
                         {s.loggedAt ? new Date(s.loggedAt).toLocaleString() : "—"}
                       </td>
-                      <td className="px-3 py-2.5 capitalize text-gray-700">{s.mode}</td>
+                      <td className="px-3 py-2.5 text-gray-700">{(s.condition ?? s.mode).replace("_", " ")}{s.seededErrorCondition ? " · err" : ""}{s.isTest ? " · test" : ""}</td>
                       <td className="px-3 py-2.5">
                         <button
                           onClick={() => setActiveLog(s)}
