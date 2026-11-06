@@ -12,6 +12,29 @@ Participants are recruited through CloudResearch Connect. On arrival they enter 
 
 The study is built around a comparison between two ways of organising several agents around a single task.
 
+## Study Design (v2, schema 2.0)
+
+Version 2 turns the platform into a self-contained randomized experiment for Prolific (see the research proposal, Study 1).
+
+- **No login.** Participants open the study link, give consent, and go straight to the task. Prolific's `PROLIFIC_PID`, `STUDY_ID`, and `SESSION_ID` URL parameters are captured automatically when present.
+- **Random assignment.** `/api/assign` places each participant in the least-filled cell of the design: **4 architectures × 2 seeded-error levels**. The architectures are `single` (one agent), `collaborative` (sequential pipeline), `competitive` (parallel agents, orchestrator recommends one), and `competitive_norec` (parallel agents, no recommendation). The cell is chosen with balanced randomization using KV counters.
+- **Seeded error.** In error cells, a verifiable, internally inconsistent claim ("cut costs by 40%, from $50 million to $40 million") is inserted into the AI report the participant reviews. In competitive modes it goes into the orchestrator's pick. `seededErrorRetained` records whether the error survived in the submitted report.
+- **Fixed task.** Every condition uses the same task and ~300-word report length. Participants can add preferences but cannot change the task.
+- **Questionnaire.** After submitting the report, participants answer a multi-page questionnaire (`lib/survey.ts`). It covers manipulation check, perceived consensus, verification, error noticing, trust, orchestrator reliance, psychological ownership, accountability, responsibility allocation, NASA-TLX, overload, demographics, an attention check, and a self-reported honesty check. They then enter or confirm their Prolific ID and receive the completion code.
+- **Prolific study link.** `https://<host>/?PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}&cc=<COMPLETION_CODE>`. The `cc` parameter supplies the completion code when the env var is not set.
+- **Test runs.** Use `/?test=1&reset=1` (optionally `&mode=single|collaborative|competitive|competitive_norec&error=0|1`). Test sessions are flagged `isTest`, do not count toward balancing, and are hidden from dashboard statistics by default.
+
+Study environment variables:
+
+```
+PROLIFIC_COMPLETION_CODE  Completion code shown on the final page (optional: otherwise pass &cc=CODE in the study link)
+GROQ_MODEL                Preferred Groq model; falls back automatically if retired (default: openai/gpt-oss-120b)
+STUDY_CONDITIONS          Optional subset of arms, e.g. "collaborative,competitive"
+SEEDED_ERROR              Set to "off" to disable the seeded-error factor
+NEXT_PUBLIC_PI_CONTACT    PI name and email shown on the consent page
+NEXT_PUBLIC_IRB_PROTOCOL  IRB protocol number shown on the consent page
+```
+
 ## Interaction Modes
 
 ### Collaborative
