@@ -404,6 +404,16 @@ function avgNum(arr: number[]): number {
 export default function AdminPage() {
   const [rawSessions, setSessions] = useState<Session[]>([]);
   const [includeTests, setIncludeTests] = useState(false);
+  // Live assignment counters (completed / in progress) per cell, from /api/assign.
+  const [cellLoad, setCellLoad] = useState<Record<string, { completed: number; inProgress: number }>>({});
+  useEffect(() => {
+    fetch("/api/assign")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: { cell: string; completed: number; inProgress: number }[]) =>
+        setCellLoad(Object.fromEntries(rows.map((r) => [r.cell, { completed: r.completed, inProgress: r.inProgress }])))
+      )
+      .catch(() => {});
+  }, []);
   const [loading, setLoading] = useState(true);
   const [activeLog, setActiveLog] = useState<Session | null>(null);
   const [dark, setDark] = useState(false);
@@ -553,6 +563,7 @@ export default function AdminPage() {
                     <th className="text-right px-4 py-2 font-medium">No error</th>
                     <th className="text-right px-4 py-2 font-medium">Seeded error</th>
                     <th className="text-right px-4 py-2 font-medium">Error corrected</th>
+                    <th className="text-right px-4 py-2 font-medium" title="Live assignment counters: completed / in progress (no error · error)">Assignment (done / in progress)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -563,6 +574,12 @@ export default function AdminPage() {
                       <td className="px-4 py-2 text-right text-gray-700">{r.nNoErr}</td>
                       <td className="px-4 py-2 text-right text-gray-700">{r.nErr}</td>
                       <td className="px-4 py-2 text-right text-gray-700">{r.nErr ? `${r.caught} (${Math.round((r.caught / r.nErr) * 100)}%)` : "—"}</td>
+                      <td className="px-4 py-2 text-right text-gray-500 font-mono">
+                        {[0, 1].map((e) => {
+                          const l = cellLoad[`${r.key}:${e}`];
+                          return l ? `${l.completed}/${l.inProgress}` : "–";
+                        }).join(" · ")}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
