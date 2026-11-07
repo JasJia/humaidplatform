@@ -14,6 +14,8 @@ export default function InstructionsPage() {
     if (sessionStorage.getItem("humaid_session_data")) { router.replace("/submit"); return; }
     const m = sessionStorage.getItem("humaid_mode");
     if (!isCondition(m)) { router.push("/"); return; }
+    // Pre-task questionnaire must be completed first.
+    if (!sessionStorage.getItem("humaid_pre_survey")) { router.replace("/pre"); return; }
     setMode(m);
     // Record when the instructions page was shown, to measure dwell time.
     sessionStorage.setItem("humaid_instructions_start", String(Date.now()));
