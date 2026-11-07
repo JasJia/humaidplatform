@@ -3,6 +3,7 @@ import { kv } from "@vercel/kv";
 import { hasCompleted, markCompleted } from "@/lib/participant-gate";
 import { SCHEMA_VERSION, APP_VERSION, PROMPT_VERSION } from "@/lib/versions";
 import { containsSeededError, SEEDED_ERROR } from "@/lib/study-config";
+import { completeAssignment } from "@/lib/assignment";
 
 /**
  * Persists a completed session and returns the Prolific completion code.
@@ -58,6 +59,10 @@ export async function POST(req: NextRequest) {
 
   // Record completion for repeat-participation detection (non-fatal if it fails).
   if (participantId && !isTest) await markCompleted(participantId);
+  // Count this session toward its cell's completed total (keeps groups balanced).
+  if (!isTest && !duplicate) {
+    try { await completeAssignment(body.sessionId as string); } catch (err) { console.error("[humaid/log] completeAssignment failed:", err); }
+  }
 
   // Env var wins; otherwise use the code passed in the study link (&cc=...).
   const urlCode = typeof body.completionCodeFromUrl === "string" ? body.completionCodeFromUrl.trim() : "";
