@@ -67,10 +67,12 @@ export default function WelcomePage() {
     setLoading(true);
     setError("");
     try {
+      const sessionId = generateSessionId();
       const res = await fetch("/api/assign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          sessionId,
           test: sessionStorage.getItem("humaid_is_test") === "1",
           mode: sessionStorage.getItem("humaid_mode_override") ?? undefined,
           error: sessionStorage.getItem("humaid_error_override") ?? undefined,
@@ -79,13 +81,13 @@ export default function WelcomePage() {
       const data = await res.json();
       if (!res.ok || !data.condition) throw new Error("assign failed");
 
-      sessionStorage.setItem("humaid_session_id", generateSessionId());
+      sessionStorage.setItem("humaid_session_id", sessionId);
       sessionStorage.setItem("humaid_start_time", new Date().toISOString());
       sessionStorage.setItem("humaid_consent_at", new Date().toISOString());
       sessionStorage.setItem("humaid_mode", data.condition);
       sessionStorage.setItem("humaid_seed_error", data.seedError ? "1" : "0");
       sessionStorage.setItem("humaid_assignment_method", data.method);
-      router.push("/instructions");
+      router.push("/pre");
     } catch {
       setError("Something went wrong while starting the study. Please refresh the page and try again.");
       setLoading(false);
