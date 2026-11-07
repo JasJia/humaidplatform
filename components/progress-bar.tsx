@@ -6,6 +6,7 @@ const WORK_PATHS = ["/single", "/collaborative", "/competitive"];
 
 const STEPS = [
   { label: "Welcome", match: (p: string) => p === "/" },
+  { label: "About You", match: (p: string) => p === "/pre" },
   { label: "Instructions", match: (p: string) => p === "/instructions" },
   { label: "Task", match: (p: string) => WORK_PATHS.includes(p) },
   { label: "Questionnaire", match: (p: string) => p === "/submit" },
