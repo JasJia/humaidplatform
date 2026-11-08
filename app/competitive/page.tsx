@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { TASK } from "@/lib/data";
-import { logEvent, getEvents } from "@/lib/event-logger";
+import { logEvent, getEvents, snapshotReport, flushEvents } from "@/lib/event-logger";
 import { computeProvenance, summariseProvenance } from "@/lib/provenance";
 import { editDistance, wordDelta } from "@/lib/edit-distance";
 import { containsSeededError } from "@/lib/study-config";
@@ -283,6 +283,7 @@ export default function CompetitivePage() {
       // Without a recommendation, the editor starts empty until a report is chosen.
       const start = showRec ? (data.finalVersion ?? "") : "";
       setFinalText(start);
+      if (start) snapshotReport(start, "ai_output");
       setBaseText(start);
       if (roundNum === 1) setOriginalFinal(data.finalVersion ?? "");
       setSelectedAgentId(null);
@@ -330,6 +331,7 @@ export default function CompetitivePage() {
 
   function handleTextareaChange(text: string) {
     setFinalText(text);
+    snapshotReport(text);
     clearTimeout(editDebounceRef.current);
     editDebounceRef.current = setTimeout(() => {
       logEvent("textarea_edit", { charCount: text.length, wordCount: wordCount(text) });
@@ -369,6 +371,7 @@ export default function CompetitivePage() {
   function handleSelectAgent(agent: AgentOutput) {
     setSelectedAgentId(agent.id);
     setFinalText(agent.output);
+    snapshotReport(agent.output, "agent_selected");
     setBaseText(agent.output);
     logEvent("agent_selected", {
       agentId: agent.id,
@@ -379,6 +382,7 @@ export default function CompetitivePage() {
   }
 
   async function handleSubmit() {
+    snapshotReport(finalText, "final");
     submittingRef.current = true;
     const agentOutputSources = currentRound?.agentOutputs.map((a) => ({
       id: `agent_${a.name.replace(/\s+/g, "_")}`,
@@ -469,6 +473,7 @@ export default function CompetitivePage() {
       events: getEvents(),
     };
     sessionStorage.setItem("humaid_session_data", JSON.stringify(sessionData));
+    flushEvents(false);
     await new Promise(r => setTimeout(r, 50));
     router.push("/submit");
   }

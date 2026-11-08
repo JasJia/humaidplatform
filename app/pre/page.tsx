@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { PRE_SURVEY, missingOnPage } from "@/lib/survey";
 import { SurveyBlock, type Answers } from "@/components/survey-block";
 import { isCondition, type Condition } from "@/lib/study-config";
+import { logEvent } from "@/lib/event-logger";
 
 /**
  * Pre-task questionnaire (AI literacy, trust propensity). Shown after consent
@@ -48,7 +49,7 @@ export default function PreSurveyPage() {
           block={b}
           condition={condition}
           answers={answers}
-          set={(k, v) => setAnswers((prev) => ({ ...prev, [k]: v }))}
+          set={(k, v) => { logEvent("survey_answer", { item: k, value: v, page: "pre" }); setAnswers((prev) => ({ ...prev, [k]: v })); }}
           showMissing={showMissing}
         />
       ))}

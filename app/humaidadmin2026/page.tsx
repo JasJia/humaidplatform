@@ -404,6 +404,11 @@ function avgNum(arr: number[]): number {
 export default function AdminPage() {
   const [rawSessions, setSessions] = useState<Session[]>([]);
   const [includeTests, setIncludeTests] = useState(false);
+  // Started / completed / dropped-out counts from the live activity stream.
+  const [activity, setActivity] = useState<{ started: number; completed: number; droppedOut: number } | null>(null);
+  useEffect(() => {
+    fetch("/api/events?format=summary").then((r) => (r.ok ? r.json() : null)).then(setActivity).catch(() => {});
+  }, []);
   // Live assignment counters (completed / in progress) per cell, from /api/assign.
   const [cellLoad, setCellLoad] = useState<Record<string, { completed: number; inProgress: number }>>({});
   useEffect(() => {
@@ -518,6 +523,11 @@ export default function AdminPage() {
             <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-1">Research Data</p>
             <h1 className="text-2xl font-semibold text-gray-900 mb-1">Session Dashboard</h1>
             <p className="text-sm text-gray-500">All recorded participant sessions.</p>
+            {activity && (
+              <p className="text-xs text-gray-500 mt-1">
+                Activity stream (excl. tests): {activity.started} started · {activity.completed} completed · {activity.droppedOut} dropped out / in progress
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <a
@@ -525,6 +535,13 @@ export default function AdminPage() {
               className="flex-shrink-0 text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-900 hover:border-gray-900 hover:text-white px-4 py-2 rounded-md transition-colors"
             >
               Export Excel
+            </a>
+            <a
+              href="/api/events?format=csv"
+              title="Every logged participant action, including participants who dropped out before submitting"
+              className="flex-shrink-0 text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-900 hover:border-gray-900 hover:text-white px-4 py-2 rounded-md transition-colors"
+            >
+              Export Activity Log
             </a>
             <a
               href="/api/export?format=json"

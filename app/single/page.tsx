@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { TASK } from "@/lib/data";
-import { logEvent, getEvents } from "@/lib/event-logger";
+import { logEvent, getEvents, snapshotReport, flushEvents } from "@/lib/event-logger";
 import { computeProvenance, summariseProvenance } from "@/lib/provenance";
 import { editDistance, wordDelta } from "@/lib/edit-distance";
 import { containsSeededError } from "@/lib/study-config";
@@ -186,6 +186,7 @@ export default function SinglePage() {
       setRounds((prev) => [...prev, round]);
       setCurrentRound(round);
       setFinalText(round.report);
+      snapshotReport(round.report, "ai_output");
       if (roundNum === 1) setOriginalReport(round.report);
       setEditMode(false);
       setShowFeedback(false);
@@ -214,6 +215,7 @@ export default function SinglePage() {
 
   function handleTextareaChange(text: string) {
     setFinalText(text);
+    snapshotReport(text);
     clearTimeout(editDebounceRef.current);
     editDebounceRef.current = setTimeout(() => {
       logEvent("textarea_edit", { charCount: text.length, wordCount: wordCount(text) });
@@ -221,6 +223,7 @@ export default function SinglePage() {
   }
 
   async function handleSubmit() {
+    snapshotReport(finalText, "final");
     submittingRef.current = true;
     const provenanceSpans = computeProvenance(finalText, [
       { id: "agent_report", text: currentRound?.report ?? "" },
@@ -273,6 +276,7 @@ export default function SinglePage() {
       events: getEvents(),
     };
     sessionStorage.setItem("humaid_session_data", JSON.stringify(sessionData));
+    flushEvents(false);
     await new Promise((r) => setTimeout(r, 50));
     router.push("/submit");
   }

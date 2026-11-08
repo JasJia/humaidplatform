@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { SURVEY, blockApplies, missingOnPage } from "@/lib/survey";
 import { SurveyBlock, type Answers } from "@/components/survey-block";
+import { logEvent, flushEvents } from "@/lib/event-logger";
 import { isCondition, prolificCompletionUrl, type Condition } from "@/lib/study-config";
 
 function applyInline(text: string): string {
@@ -188,6 +189,9 @@ export default function SubmitPage() {
   }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function set(k: string, v: string | number) {
+    // Log every answer and change of answer (open text is logged as length only here;
+    // the final text is in the submitted record).
+    logEvent("survey_answer", { item: k, value: typeof v === "string" && v.length > 20 ? `[text:${v.length}]` : v, page: step });
     setAnswers((prev) => ({ ...prev, [k]: v }));
   }
 
@@ -205,6 +209,7 @@ export default function SubmitPage() {
     const missing = missingOnPage(page, condition, answers);
     if (missing.length) { setShowMissing(new Set(missing)); return; }
     setShowMissing(new Set());
+    logEvent("survey_page_complete", { page: step, title: pages[step - 1]?.title });
     setStep(step + 1);
   }
 
@@ -237,6 +242,8 @@ export default function SubmitPage() {
       });
       const j = await res.json().catch(() => null);
       if (!res.ok || !j) throw new Error(j?.error ?? `HTTP ${res.status}`);
+      logEvent("study_completed", {});
+      flushEvents(false);
       const done = { code: j.completionCode ?? null, duplicate: Boolean(j.duplicate) };
       setCompletion(done);
       sessionStorage.removeItem("humaid_survey_progress");
@@ -313,7 +320,7 @@ export default function SubmitPage() {
             <p className="text-xs text-gray-400 mb-4">1 = not confident, 5 = very confident</p>
             <div className="flex gap-2 mb-2">
               {[1, 2, 3, 4, 5].map((star) => (
-                <button key={star} onClick={() => setRating(star)} onMouseEnter={() => setHoverRating(star)} onMouseLeave={() => setHoverRating(0)} className="focus:outline-none">
+                <button key={star} onClick={() => { logEvent("survey_answer", { item: "confidence", value: star, page: 0 }); setRating(star); }} onMouseEnter={() => setHoverRating(star)} onMouseLeave={() => setHoverRating(0)} className="focus:outline-none">
                   <svg className={`w-8 h-8 transition-colors ${star <= (hoverRating || rating) ? "text-gray-900" : "text-gray-200"}`} fill="currentColor" viewBox="0 0 24 24">
                     <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                   </svg>
@@ -325,7 +332,7 @@ export default function SubmitPage() {
           <div className="border border-gray-200 rounded-lg p-5 mb-6">
             <p className="text-sm font-medium text-gray-900 mb-1">Quick ratings</p>
             {LIKERT_QUESTIONS.map((q) => (
-              <LikertScale key={q.id} question={q} value={likert[q.id] || 0} onChange={(v) => setLikert((prev) => ({ ...prev, [q.id]: v }))} />
+              <LikertScale key={q.id} question={q} value={likert[q.id] || 0} onChange={(v) => { logEvent("survey_answer", { item: q.id, value: v, page: 0 }); setLikert((prev) => ({ ...prev, [q.id]: v })); }} />
             ))}
           </div>
         </>
