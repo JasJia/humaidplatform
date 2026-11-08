@@ -113,7 +113,11 @@ export default function WelcomePage() {
         <div className="text-sm text-gray-600 leading-relaxed space-y-2">
           <p>Researchers at Quinnipiac University are studying how people review, edit, and rely on content produced by AI agents. You will work with AI agents to produce a short report, then answer a questionnaire.</p>
           <p>Your interactions on this platform (for example, clicks, time spent, and edits) are recorded. We collect your Prolific ID only to pay you and to prevent duplicate participation. Data are stored securely and reported only in aggregate. There are no risks beyond those of everyday computer use, and you may stop at any time by closing this window.</p>
-          <p className="text-xs text-gray-400">Questions: {process.env.NEXT_PUBLIC_PI_CONTACT ?? "[PI name and email]"} · IRB protocol {process.env.NEXT_PUBLIC_IRB_PROTOCOL ?? "[number]"}</p>
+          <p className="text-xs text-gray-500">
+            Questions about this study: {process.env.NEXT_PUBLIC_PI_CONTACT ?? "Shizhen (Jasper) Jia, Quinnipiac University"},{" "}
+            <a href="mailto:shizhen.jia@quinnipiac.edu" className="underline">shizhen.jia@quinnipiac.edu</a>
+            {process.env.NEXT_PUBLIC_IRB_PROTOCOL ? ` · IRB protocol ${process.env.NEXT_PUBLIC_IRB_PROTOCOL}` : ""}
+          </p>
         </div>
         <label className="flex items-start gap-2 mt-4 cursor-pointer">
           <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-0.5" />
