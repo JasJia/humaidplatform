@@ -27,9 +27,10 @@ export type Block = {
 
 export type Page = { id: string; title: string; blocks: Block[] };
 
-const AGREE7 = ["Strongly disagree", "Disagree", "Somewhat disagree", "Neutral", "Somewhat agree", "Agree", "Strongly agree"];
+// All rating items use 5-point scales.
+const AGREE5 = ["Strongly disagree", "Disagree", "Neutral", "Agree", "Strongly agree"];
 const EXTENT5 = ["Not at all", "Slightly", "Somewhat", "Moderately", "Very much"];
-const LOWHIGH7 = ["1 Very low", "2", "3", "4", "5", "6", "7 Very high"];
+const LOWHIGH5 = ["1 Very low", "2", "3", "4", "5 Very high"];
 
 const MULTI: Condition[] = ["collaborative", "competitive", "competitive_norec"];
 const ORCH: Condition[] = ["collaborative", "competitive", "competitive_norec"];
@@ -59,7 +60,7 @@ export const SURVEY: Page[] = [
         id: "consensus",
         only: MULTI,
         intro: "Thinking about the AI agents, how much do you agree with each statement?",
-        scale: AGREE7,
+        scale: AGREE5,
         items: [
           { kind: "likert", id: "consensus_1", text: "The AI agents seemed to agree with one another." },
           { kind: "likert", id: "consensus_2", text: "The output I received reflected a single, unified point of view." },
@@ -109,7 +110,7 @@ export const SURVEY: Page[] = [
       {
         id: "trust_agents",
         intro: "How much do you agree with each statement about the AI agent(s) that wrote the content?",
-        scale: AGREE7,
+        scale: AGREE5,
         items: [
           { kind: "likert", id: "trust_1", text: "The AI was reliable." },
           { kind: "likert", id: "trust_2", text: "The AI produced accurate information." },
@@ -121,7 +122,7 @@ export const SURVEY: Page[] = [
         id: "orch",
         only: ORCH,
         intro: "How much do you agree with each statement about the Orchestrator (the AI that coordinated the agents)?",
-        scale: AGREE7,
+        scale: AGREE5,
         items: [
           { kind: "likert", id: "orch_1", text: "I trusted the Orchestrator's decisions." },
           { kind: "likert", id: "orch_2", text: "I relied on the Orchestrator to judge the quality of the agents' work." },
@@ -138,11 +139,11 @@ export const SURVEY: Page[] = [
       {
         id: "ownership",
         intro: "Thinking about the final report you submitted, how much do you agree with each statement?",
-        scale: AGREE7,
+        scale: AGREE5,
         items: [
           { kind: "likert", id: "own_1", text: "This is MY report." },
           { kind: "likert", id: "own_2", text: "I feel a very high degree of personal ownership for this report." },
-          { kind: "likert", id: "attn_1", text: "To show that you are reading carefully, please select \"Somewhat disagree\" for this statement.", attention: 3 },
+          { kind: "likert", id: "attn_1", text: "To show that you are reading carefully, please select \"Disagree\" for this statement.", attention: 2 },
           { kind: "likert", id: "own_3", text: "I sense that this report reflects my own work." },
           { kind: "likert", id: "own_4", text: "It is hard for me to think about this report as mine.", reverse: true },
         ],
@@ -150,7 +151,7 @@ export const SURVEY: Page[] = [
       {
         id: "accountability",
         intro: "How much do you agree with each statement?",
-        scale: AGREE7,
+        scale: AGREE5,
         items: [
           { kind: "likert", id: "acct_1", text: "I feel personally responsible for the quality of the final report." },
           { kind: "likert", id: "acct_2", text: "If the report contained an error, it would be my fault." },
@@ -176,7 +177,7 @@ export const SURVEY: Page[] = [
       {
         id: "quality",
         intro: "How much do you agree with each statement about your final report?",
-        scale: AGREE7,
+        scale: AGREE5,
         items: [
           { kind: "likert", id: "qual_1", text: "My final report is accurate." },
           { kind: "likert", id: "qual_2", text: "My final report is useful for senior managers." },
@@ -192,11 +193,11 @@ export const SURVEY: Page[] = [
       {
         id: "tlx",
         intro: "How would you rate the task you just completed?",
-        scale: LOWHIGH7,
+        scale: LOWHIGH5,
         items: [
           { kind: "likert", id: "tlx_mental", text: "Mental demand: How mentally demanding was the task?" },
           { kind: "likert", id: "tlx_temporal", text: "Temporal demand: How hurried or rushed was the pace of the task?" },
-          { kind: "likert", id: "tlx_performance", text: "Performance: How unsuccessful were you in accomplishing what you were asked to do? (1 = fully successful)" },
+          { kind: "likert", id: "tlx_performance", text: "Performance: How unsuccessful were you in accomplishing what you were asked to do? (1 = fully successful, 5 = completely unsuccessful)" },
           { kind: "likert", id: "tlx_effort", text: "Effort: How hard did you have to work to accomplish your level of performance?" },
           { kind: "likert", id: "tlx_frustration", text: "Frustration: How insecure, discouraged, irritated, stressed, or annoyed were you?" },
         ],
@@ -204,7 +205,7 @@ export const SURVEY: Page[] = [
       {
         id: "overload",
         intro: "How much do you agree with each statement?",
-        scale: AGREE7,
+        scale: AGREE5,
         items: [
           { kind: "likert", id: "overload_1", text: "There was too much AI-generated information to process." },
           { kind: "likert", id: "overload_2", text: "I felt overwhelmed by the amount of AI output." },
@@ -266,18 +267,6 @@ export const SURVEY: Page[] = [
         ],
       },
       {
-        id: "literacy",
-        intro: "How much do you agree with each statement?",
-        scale: AGREE7,
-        items: [
-          { kind: "likert", id: "ailit_1", text: "I understand the main strengths and weaknesses of AI chatbots." },
-          { kind: "likert", id: "ailit_2", text: "I know that AI tools can produce confident but incorrect statements." },
-          { kind: "likert", id: "ailit_3", text: "I can check whether information provided by an AI tool is accurate." },
-          { kind: "likert", id: "tprop_1", text: "My typical approach is to trust new technologies until they prove to me that I shouldn't trust them." },
-          { kind: "likert", id: "tprop_2", text: "I generally give a technology the benefit of the doubt when I first use it." },
-        ],
-      },
-      {
         id: "honesty",
         items: [
           {
@@ -294,6 +283,29 @@ export const SURVEY: Page[] = [
     ],
   },
 ];
+
+/**
+ * Short questionnaire shown after consent and BEFORE the task, so these
+ * individual differences (moderators) are not influenced by the condition.
+ */
+export const PRE_SURVEY: Page = {
+  id: "pre",
+  title: "Before you start",
+  blocks: [
+    {
+      id: "pre_literacy",
+      intro: "How much do you agree with each statement?",
+      scale: AGREE5,
+      items: [
+        { kind: "likert", id: "ailit_1", text: "I understand the main strengths and weaknesses of AI chatbots." },
+        { kind: "likert", id: "ailit_2", text: "I know that AI tools can produce confident but incorrect statements." },
+        { kind: "likert", id: "ailit_3", text: "I can check whether information provided by an AI tool is accurate." },
+        { kind: "likert", id: "tprop_1", text: "My typical approach is to trust new technologies until they prove to me that I shouldn't trust them." },
+        { kind: "likert", id: "tprop_2", text: "I generally give a technology the benefit of the doubt when I first use it." },
+      ],
+    },
+  ],
+};
 
 export function blockApplies(b: Block, c: Condition): boolean {
   return !b.only || b.only.includes(c);

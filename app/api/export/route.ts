@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { cookies } from "next/headers";
 import * as XLSX from "xlsx";
-import { SURVEY } from "@/lib/survey";
+import { SURVEY, PRE_SURVEY } from "@/lib/survey";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 function esc(v: unknown): string {
@@ -54,7 +54,7 @@ const SESSION_HEADERS = [
 ];
 
 // ── Study-design + questionnaire columns (schema 2.0) ──────────────────────
-const SURVEY_ITEM_IDS: string[] = SURVEY.flatMap((p) =>
+const SURVEY_ITEM_IDS: string[] = [PRE_SURVEY, ...SURVEY].flatMap((p) =>
   p.blocks.flatMap((b) => b.items.flatMap((it) => (it.kind === "sum" ? it.parts.map((x) => x.id) : [it.id])))
 );
 const STUDY_HEADERS = [
