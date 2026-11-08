@@ -5,6 +5,7 @@ import { ProgressBar } from "@/components/progress-bar";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AdminLogout } from "@/components/admin-logout";
+import { ActivityTracker } from "@/components/activity-tracker";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -31,6 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </div>
         </nav>
+        <ActivityTracker />
         <ProgressBar />
         <main className="max-w-7xl mx-auto px-6 py-10">
           <ErrorBoundary>{children}</ErrorBoundary>
