@@ -23,6 +23,16 @@ Version 2 turns the platform into a self-contained randomized experiment for Pro
 - **Pre-task questionnaire.** AI literacy and trust propensity are measured on `/pre`, after consent and before the instructions. All rating items use 5-point scales.
 - **Questionnaire.** After submitting the report, participants answer a multi-page questionnaire (`lib/survey.ts`). It covers manipulation check, perceived consensus, verification, error noticing, trust, orchestrator reliance, psychological ownership, accountability, responsibility allocation, NASA-TLX, overload, demographics, an attention check, and a self-reported honesty check. They then enter or confirm their Prolific ID and receive the completion code.
 - **Prolific study link.** `https://<host>/?PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}&cc=<COMPLETION_CODE>`. The `cc` parameter supplies the completion code when the env var is not set.
+- **Activity logging.** `components/activity-tracker.tsx` and `lib/event-logger.ts` record:
+  - page views and time on page;
+  - tab switches and window focus;
+  - copy / cut / paste (length and first 300 characters);
+  - every button or link click, including reference links;
+  - text selections and idle periods (60 s or more);
+  - report text snapshots every 15 s;
+  - every questionnaire answer and answer change.
+
+  Events are streamed to `/api/events` every 10 s and whenever the page is hidden or closed, so dropouts' activity is kept. The admin dashboard's **Export Activity Log** button downloads every event for every session, including incomplete ones.
 - **Database.** Sessions are stored in Upstash Redis (Vercel Storage, `KV_*` env vars). Free Upstash databases are archived after inactivity; if saving fails, check the store status under Vercel → Storage.
 - **Test runs.** Use `/?test=1&reset=1` (optionally `&mode=single|collaborative|competitive|competitive_norec&error=0|1`). Test sessions are flagged `isTest`, do not count toward balancing, and are hidden from dashboard statistics by default.
 
