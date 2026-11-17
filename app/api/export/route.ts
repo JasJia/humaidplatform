@@ -3,6 +3,7 @@ import { kv } from "@vercel/kv";
 import { cookies } from "next/headers";
 import * as XLSX from "xlsx";
 import { SURVEY, PRE_SURVEY } from "@/lib/survey";
+import { exclusionReasons, totalMinutes, isClassSession } from "@/lib/exclusion";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 function esc(v: unknown): string {
@@ -61,6 +62,7 @@ const STUDY_HEADERS = [
   "condition", "seededErrorCondition", "seededErrorRetained", "recommendationShown",
   "recommendedAgentName", "basedOnOrchestratorPick", "editDistanceFromBase",
   "studyId", "prolificSessionId", "isTest", "duplicate", "attentionCheckPassed",
+  "source", "totalMinutes", "excluded", "exclusionReasons",
   "surveyStartedAt", "surveyCompletedAt",
   ...SURVEY_ITEM_IDS.map((id) => `q_${id}`),
 ];
@@ -73,6 +75,10 @@ function studyCells(s: Record<string, unknown>): (string | number)[] {
     v(s.condition ?? s.mode), v(s.seededErrorCondition), v(s.seededErrorRetained), v(s.recommendationShown),
     v(s.recommendedAgentName), v(s.basedOnOrchestratorPick), v(s.editDistanceFromBase),
     v(s.studyId), v(s.prolificSessionId), v(s.isTest), v(s.duplicate), v(s.attentionCheckPassed),
+    isClassSession(s) ? "class" : "prolific",
+    (() => { const m = totalMinutes(s); return m === null ? "" : Math.round(m * 10) / 10; })(),
+    exclusionReasons(s).length ? "Yes" : "No",
+    exclusionReasons(s).join("; "),
     v(s.surveyStartedAt), v(s.surveyCompletedAt),
     ...SURVEY_ITEM_IDS.map((id) => v(ans[id])),
   ];
