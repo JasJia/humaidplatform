@@ -5,6 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip,
   PieChart, Pie, Cell, Legend,
 } from "recharts";
+import { exclusionReasons, EXCLUSION_LABEL, MIN_TOTAL_MINUTES, isClassSession } from "@/lib/exclusion";
 
 type Survey = { trust: number; difficulty: number; satisfaction: number; effort: number };
 
@@ -51,6 +52,9 @@ type Session = {
   seededErrorCondition?: boolean;
   seededErrorRetained?: boolean | null;
   isTest?: boolean;
+  source?: string;
+  consentAt?: string;
+  surveyCompletedAt?: string;
   duplicate?: boolean;
   attentionCheckPassed?: boolean;
   startTime: string;
@@ -403,7 +407,10 @@ function avgNum(arr: number[]): number {
 // ── Admin Page ───────────────────────────────────────────────────────────────
 export default function AdminPage() {
   const [rawSessions, setSessions] = useState<Session[]>([]);
-  const [includeTests, setIncludeTests] = useState(false);
+  // Which sample to show: Prolific main study (default), classroom pilot, or everything incl. tests.
+  const [sample, setSample] = useState<"prolific" | "class" | "all">("prolific");
+  // Apply the pre-registered exclusion rules (lib/exclusion.ts).
+  const [applyExclusions, setApplyExclusions] = useState(true);
   // Started / completed / dropped-out counts from the live activity stream.
   const [activity, setActivity] = useState<{ started: number; completed: number; droppedOut: number } | null>(null);
   useEffect(() => {
@@ -468,11 +475,17 @@ export default function AdminPage() {
       .catch((err) => { console.error("[admin]", err); setLoading(false); });
   }, []);
 
-  // Study cells (schema 2.0). Test sessions are excluded from all statistics
-  // unless "Include test sessions" is ticked.
+  // Study cells (schema 2.0). Statistics use the chosen sample; flagged
+  // sessions are dropped when "Apply exclusions" is ticked.
   const allSessions = rawSessions;
-  const sessions = includeTests ? allSessions : allSessions.filter((s) => !s.isTest);
-  const testCount = allSessions.filter((s) => s.isTest).length;
+  const inSample = allSessions.filter((s) =>
+    sample === "all" ? true : sample === "class" ? isClassSession(s) : !s.isTest && !isClassSession(s)
+  );
+  const flagged = inSample.filter((s) => exclusionReasons(s).length > 0);
+  const sessions = applyExclusions ? inSample.filter((s) => exclusionReasons(s).length === 0) : inSample;
+  const reasonCounts = Object.keys(EXCLUSION_LABEL).map((k) => ({
+    k, n: flagged.filter((s) => exclusionReasons(s).includes(k)).length,
+  })).filter((r) => r.n > 0);
   const CONDS = [
     { key: "single", label: "Single agent" },
     { key: "collaborative", label: "Collaborative" },
@@ -567,10 +580,27 @@ export default function AdminPage() {
             <div className="border border-gray-200 rounded-lg overflow-hidden mb-6">
               <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-widest">Study Cells (condition × seeded error)</p>
-                <label className="text-xs text-gray-500 flex items-center gap-1.5 cursor-pointer">
-                  <input type="checkbox" checked={includeTests} onChange={(e) => setIncludeTests(e.target.checked)} />
-                  Include test sessions ({testCount})
-                </label>
+                <div className="flex items-center gap-4">
+                  <select
+                    value={sample}
+                    onChange={(e) => setSample(e.target.value as "prolific" | "class" | "all")}
+                    className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-700"
+                  >
+                    <option value="prolific">Prolific main study</option>
+                    <option value="class">Class pilot (students)</option>
+                    <option value="all">All sessions (incl. tests)</option>
+                  </select>
+                  <label className="text-xs text-gray-500 flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox" checked={applyExclusions} onChange={(e) => setApplyExclusions(e.target.checked)} />
+                    Apply exclusions
+                  </label>
+                </div>
+              </div>
+              <div className="px-5 py-2 border-b border-gray-100 text-xs text-gray-500">
+                {inSample.length} completed in this sample · {flagged.length} flagged
+                {reasonCounts.length > 0 && ` (${reasonCounts.map((r) => `${EXCLUSION_LABEL[r.k]}: ${r.n}`).join(", ")})`}
+                {" · "}{applyExclusions ? `${sessions.length} kept for analysis` : "flagged sessions included"}
+                <span className="text-gray-400"> — rules: failed attention check, under {MIN_TOTAL_MINUTES} min from consent to submit, duplicate participant</span>
               </div>
               <table className="w-full text-xs">
                 <thead>
@@ -629,6 +659,7 @@ export default function AdminPage() {
                     <th className="text-left px-3 py-2.5 text-gray-400 font-medium">Session ID</th>
                     <th className="text-left px-3 py-2.5 text-gray-400 font-medium whitespace-nowrap">Logged At</th>
                     <th className="text-left px-3 py-2.5 text-gray-400 font-medium">Mode</th>
+                    <th className="text-left px-3 py-2.5 text-gray-400 font-medium">Flags</th>
                     <th className="text-left px-3 py-2.5 text-gray-400 font-medium">Log</th>
                     <th className="text-left px-3 py-2.5 text-gray-400 font-medium">Duration</th>
                     <th className="text-left px-3 py-2.5 text-gray-400 font-medium">Rounds</th>
@@ -641,13 +672,14 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sessions.map((s) => (
+                  {inSample.map((s) => (
                     <tr key={s.sessionId} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                       <td className="px-3 py-2.5 font-mono text-gray-400">{s.sessionId?.slice(0, 20)}…</td>
                       <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">
                         {s.loggedAt ? new Date(s.loggedAt).toLocaleString() : "—"}
                       </td>
-                      <td className="px-3 py-2.5 text-gray-700">{(s.condition ?? s.mode).replace("_", " ")}{s.seededErrorCondition ? " · err" : ""}{s.isTest ? " · test" : ""}</td>
+                      <td className="px-3 py-2.5 text-gray-700">{(s.condition ?? s.mode).replace("_", " ")}{s.seededErrorCondition ? " · err" : ""}{isClassSession(s) ? " · class" : s.isTest ? " · test" : ""}</td>
+                      <td className="px-3 py-2.5 text-red-500 whitespace-nowrap">{exclusionReasons(s).map((r) => EXCLUSION_LABEL[r]).join(", ") || <span className="text-gray-300">—</span>}</td>
                       <td className="px-3 py-2.5">
                         <button
                           onClick={() => setActiveLog(s)}
