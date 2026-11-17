@@ -28,6 +28,8 @@ export default function WelcomePage() {
   const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Classroom pilot version (?source=class): no Prolific ID, no completion code.
+  const [isClass, setIsClass] = useState(false);
 
   // Capture Prolific (or other panel) parameters from the entry URL.
   useEffect(() => {
@@ -43,6 +45,13 @@ export default function WelcomePage() {
       router.replace("/instructions");
       return;
     }
+    const classParam = params.get("source") === "class" || params.get("class") === "1";
+    if (classParam) {
+      sessionStorage.setItem("humaid_source", "class");
+      // Class pilot sessions never count toward the Prolific balancing quotas.
+      sessionStorage.setItem("humaid_is_test", "1");
+    }
+    setIsClass(sessionStorage.getItem("humaid_source") === "class");
     const pid = readParam(params, ["PROLIFIC_PID", "prolific_pid", "participantId", "PID", "pid"]);
     const study = readParam(params, ["STUDY_ID", "study_id"]);
     const psess = readParam(params, ["SESSION_ID", "session_id"]);
@@ -105,14 +114,16 @@ export default function WelcomePage() {
       <div className="border border-gray-200 rounded-lg p-5 mb-5 bg-gray-50">
         <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-2">Your Task</p>
         <p className="text-sm text-gray-700 leading-relaxed">{TASK.description}</p>
-        <p className="text-xs text-gray-500 mt-3">Estimated time: {TASK.estimatedTime}. Please use a laptop or desktop computer and do not close this tab until you receive your completion code.</p>
+        <p className="text-xs text-gray-500 mt-3">Estimated time: {TASK.estimatedTime}. Please use a laptop or desktop computer and do not close this tab until you {isClass ? "see the completion page" : "receive your completion code"}.</p>
       </div>
 
       <div className="border border-gray-200 rounded-lg p-5 mb-5 bg-white">
         <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-2">Consent to Participate</p>
         <div className="text-sm text-gray-600 leading-relaxed space-y-2">
           <p>Researchers at Quinnipiac University are studying how people review, edit, and rely on content produced by AI agents. You will work with AI agents to produce a short report, then answer a questionnaire.</p>
-          <p>Your interactions on this platform (for example, clicks, time spent, and edits) are recorded. We collect your Prolific ID only to pay you and to prevent duplicate participation. Data are stored securely and reported only in aggregate. There are no risks beyond those of everyday computer use, and you may stop at any time by closing this window.</p>
+          <p>Your interactions on this platform (for example, clicks, time spent, and edits) are recorded. {isClass
+            ? "We do not collect your name or student ID. Participation is voluntary and will not affect your grade; an alternative extra-credit assignment is available from your instructor. "
+            : "We collect your Prolific ID only to pay you and to prevent duplicate participation. "}Data are stored securely and reported only in aggregate. There are no risks beyond those of everyday computer use, and you may stop at any time by closing this window.</p>
           <p className="text-xs text-gray-500">
             Questions about this study: {process.env.NEXT_PUBLIC_PI_CONTACT ?? "Shizhen (Jasper) Jia, Quinnipiac University"},{" "}
             <a href="mailto:shizhen.jia@quinnipiac.edu" className="underline">shizhen.jia@quinnipiac.edu</a>
