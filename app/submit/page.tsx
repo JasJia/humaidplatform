@@ -162,7 +162,9 @@ export default function SubmitPage() {
   const [answers, setAnswers] = useState<Answers>({});
   const [showMissing, setShowMissing] = useState<Set<string>>(new Set());
   const [prolificId, setProlificId] = useState("");
-  const [completion, setCompletion] = useState<{ code: string | null; duplicate: boolean } | null>(null);
+  // Classroom pilot (?source=class): skip the Prolific ID; show a screenshot page instead.
+  const [isClass, setIsClass] = useState(false);
+  const [completion, setCompletion] = useState<{ code: string | null; duplicate: boolean; at?: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [surveyStartedAt] = useState(() => new Date().toISOString());
@@ -173,6 +175,7 @@ export default function SubmitPage() {
     const m = sessionStorage.getItem("humaid_mode");
     if (isCondition(m)) setCondition(m);
     setProlificId(sessionStorage.getItem("humaid_participant_id") ?? "");
+    setIsClass(sessionStorage.getItem("humaid_source") === "class");
     const done = sessionStorage.getItem("humaid_completion");
     if (done) { setCompletion(JSON.parse(done)); return; }
     // Restore progress if the page is reloaded mid-questionnaire.
@@ -214,7 +217,7 @@ export default function SubmitPage() {
   }
 
   async function handleFinalSubmit() {
-    const pid = prolificId.trim();
+    const pid = isClass ? `class_${data?.sessionId ?? Date.now()}` : prolificId.trim();
     if (!pid || isSubmitting) return;
     setIsSubmitting(true);
     setSubmitError("");
@@ -229,6 +232,7 @@ export default function SubmitPage() {
           studyId: sessionStorage.getItem("humaid_study_id"),
           prolificSessionId: sessionStorage.getItem("humaid_prolific_session_id"),
           isTest: sessionStorage.getItem("humaid_is_test") === "1",
+          source: isClass ? "class" : "prolific",
           completionCodeFromUrl: sessionStorage.getItem("humaid_cc"),
           consentAt: sessionStorage.getItem("humaid_consent_at"),
           confidenceRating: rating,
@@ -244,7 +248,7 @@ export default function SubmitPage() {
       if (!res.ok || !j) throw new Error(j?.error ?? `HTTP ${res.status}`);
       logEvent("study_completed", {});
       flushEvents(false);
-      const done = { code: j.completionCode ?? null, duplicate: Boolean(j.duplicate) };
+      const done = { code: j.completionCode ?? null, duplicate: Boolean(j.duplicate), at: new Date().toLocaleString() };
       setCompletion(done);
       sessionStorage.removeItem("humaid_survey_progress");
       sessionStorage.setItem("humaid_completion", JSON.stringify(done)); // prevents re-submission on reload
@@ -264,6 +268,24 @@ export default function SubmitPage() {
   }
 
   // ── Completion screen ───────────────────────────────────────────────────────
+  if (completion && isClass) {
+    return (
+      <div className="max-w-md mx-auto py-10" style={{ textAlign: "center" }}>
+        <div className="w-9 h-9 border-2 border-gray-900 rounded-full flex items-center justify-center mb-4 mx-auto">
+          <svg className="w-4 h-4 text-gray-900" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+        </div>
+        <h1 className="text-lg font-semibold text-gray-900 mb-1">Thank you — you have completed the study</h1>
+        <p className="text-sm text-gray-500 mb-6">AI agents can produce plausible but inaccurate information; please do not rely on the report from this study as a factual source.</p>
+        <div className="border border-gray-200 rounded-lg p-5 mb-5">
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-2">HUMAID Study · Completion Confirmation</p>
+          <p className="text-sm text-gray-900 mb-2">Please take a screenshot of this page and upload it to the <strong>Extra Credit Survey</strong> assignment (Module 13) on Canvas.</p>
+          {completion.at && <p className="text-xs text-gray-500 font-mono">Completed: {completion.at}</p>}
+        </div>
+        <p className="text-xs text-gray-400">You may now close this window.</p>
+      </div>
+    );
+  }
+
   if (completion) {
     return (
       <div className="max-w-md mx-auto py-10" style={{ textAlign: "center" }}>
@@ -343,7 +365,15 @@ export default function SubmitPage() {
           <SurveyBlock key={b.id} block={b} condition={condition} answers={answers} set={set} showMissing={showMissing} />
         ))}
 
-      {step === lastSurveyStep + 1 && (
+      {step === lastSurveyStep + 1 && isClass && (
+        <div className="border border-gray-200 rounded-lg p-5 mb-6">
+          <p className="text-sm font-medium text-gray-900 mb-1">You&apos;re almost done</p>
+          <p className="text-xs text-gray-400">Click the button below to submit your responses. A completion page will appear; take a screenshot of it for Canvas.</p>
+          {submitError && <p className="text-sm text-red-500 mt-3">{submitError}</p>}
+        </div>
+      )}
+
+      {step === lastSurveyStep + 1 && !isClass && (
         <div className="border border-gray-200 rounded-lg p-5 mb-6">
           <p className="text-sm font-medium text-gray-900 mb-1">Please enter your Prolific ID</p>
           <p className="text-xs text-gray-400 mb-3">We need your Prolific ID to pay you. Your completion code will appear after you submit.</p>
@@ -374,10 +404,10 @@ export default function SubmitPage() {
       ) : (
         <button
           onClick={handleFinalSubmit}
-          disabled={!prolificId.trim() || isSubmitting}
+          disabled={(!isClass && !prolificId.trim()) || isSubmitting}
           className="w-full bg-gray-900 hover:bg-gray-700 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-medium py-3 rounded-lg transition-colors text-sm"
         >
-          {isSubmitting ? "Submitting..." : "Submit and get my completion code"}
+          {isSubmitting ? "Submitting..." : isClass ? "Submit" : "Submit and get my completion code"}
         </button>
       )}
     </div>
